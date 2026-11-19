@@ -8,6 +8,8 @@
 name: Programma desktop
 
 on:
+  # a ogni aggiornamento di una pull request si costruisce il pacchetto Windows (solo quello, per risparmiare minuti)
+  pull_request:
   workflow_dispatch:
     inputs:
       release_tag:
@@ -24,17 +26,8 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            script: dist:win
-            flags: -c.win.signAndEditExecutable=true
-          - os: macos-latest
-            script: dist:mac
-            flags: ''
-          - os: ubuntu-latest
-            script: dist:linux
-            flags: ''
+      # pull request: solo Windows; avvio manuale o tag: Windows, macOS e Linux
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"os":"windows-latest","script":"dist:win","flags":"-c.win.signAndEditExecutable=true"}]}' || '{"include":[{"os":"windows-latest","script":"dist:win","flags":"-c.win.signAndEditExecutable=true"},{"os":"macos-latest","script":"dist:mac","flags":""},{"os":"ubuntu-latest","script":"dist:linux","flags":""}]}') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
