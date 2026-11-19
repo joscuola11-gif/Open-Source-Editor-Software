@@ -24,6 +24,7 @@ import { Renderer } from '../engine/renderer.js';
 import { Player } from '../engine/player.js';
 import { Storage } from '../engine/storage.js';
 import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export.js';
+import { Teleprompter } from './teleprompter.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
 import { Exporter, QUALITY, availableFormats, downloadBlob, estimateBitrate, exportSize, FORMATS } from '../engine/exporter.js';
 import { VoiceRecorder, computePeaks, decodeAudio, kindOfFile, probeMedia, captureFrameBlob } from '../engine/media-import.js';
@@ -84,6 +85,8 @@ export class App {
     this.exporter = new Exporter({ store: this.store, player: this.player, audio: this.audio });
     this.voice = new VoiceRecorder();
     this.screenRec = new ScreenRecorder();
+    this.prompter = new Teleprompter();
+    this.prompter.onChange = () => this.events.emit('prompter');
     this.customFonts = [];
     this.fontsVersion = 0;
     this.clipboard = null;
@@ -983,6 +986,10 @@ export class App {
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
       },
+      /** Apre o chiude la finestra del teleprompter (copione che scorre da solo). */
+      toggleTeleprompter() {
+        app.prompter.toggle();
+      },
       /** Registratore di schermo, webcam o entrambi: finestra di scelta, poi barra rossa con tempo e «Ferma». */
       openRecorder() {
         if (!recorderSupported()) return toast('Questo browser non sa registrare.', { type: 'warn' });
@@ -992,15 +999,17 @@ export class App {
         const modes = RECORD_MODES.filter((m) => canScreen || m.id === 'webcam');
         const sel = h('select', { id: 'rec-mode', 'aria-label': 'Cosa registrare' }, modes.map((m) => h('option', { value: m.id }, m.label)));
         const mic = h('input', { type: 'checkbox', id: 'rec-mic', checked: true, 'aria-label': 'Registra anche il microfono' });
+        const prompter = h('input', { type: 'checkbox', id: 'rec-prompter', checked: app.prompter.isOpen, 'aria-label': 'Teleprompter durante la registrazione' });
         const sys = h('input', { type: 'checkbox', id: 'rec-sys', 'aria-label': 'Registra anche l’audio del computer' });
         const body = h('div', { class: 'exp-form' },
           h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Cosa registrare'), sel),
           h('label', { class: 'check' }, mic, h('span', {}, 'Registra anche la mia voce (microfono)')),
           canScreen ? h('label', { class: 'check' }, sys, h('span', {}, 'Registra anche l’audio del computer', h('small', {}, ' (solo Windows e Chrome/Edge: usa le cuffie per evitare l’eco)'))) : null,
+          h('label', { class: 'check' }, prompter, h('span', {}, 'Mostra il teleprompter e fallo partire con la registrazione', h('small', {}, ' (il copione si scrive nella sua finestra)'))),
           h('p', { class: 'hint' }, 'La registrazione finisce nella libreria e viene messa subito sulla timeline alla posizione della testina.'));
-        openDialog({ title: 'Registra', content: body, actions: [{ label: 'Annulla' }, { label: 'Inizia a registrare', primary: true, id: 'rec-go', onClick: () => { A.startRecording({ mode: sel.value, mic: mic.checked, systemAudio: sys.checked }); return true; } }] });
+        openDialog({ title: 'Registra', content: body, actions: [{ label: 'Annulla' }, { label: 'Inizia a registrare', primary: true, id: 'rec-go', onClick: () => { A.startRecording({ mode: sel.value, mic: mic.checked, systemAudio: sys.checked, prompter: prompter.checked }); return true; } }] });
       },
-      async startRecording({ mode, mic, systemAudio }) {
+      async startRecording({ mode, mic, systemAudio, prompter = false }) {
         try {
           if (mode !== 'webcam' && globalThis.ciakDesktop?.listSources && !(await app.#pickCaptureSource(systemAudio))) return;
           await app.screenRec.start({ mode, mic, systemAudio }, { onEnded: () => A.stopRecording() });
@@ -1009,11 +1018,13 @@ export class App {
           return;
         }
         app.#showRecBar();
+        if (prompter) app.prompter.start();
         toast('Registrazione in corso…', { ms: 2500 });
       },
       async stopRecording() {
         if (!app.screenRec.recording) return;
         const mode = app.screenRec.mode;
+        app.prompter.pause();
         app.#hideRecBar();
         try {
           const { blob, seconds } = await app.screenRec.stop();

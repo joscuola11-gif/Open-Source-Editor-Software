@@ -1967,3 +1967,129 @@ input[type='range'] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- teleprompter ---------- */
+.prompter {
+  position: fixed;
+  z-index: 1150;
+  min-width: 320px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  resize: both;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  border-radius: 12px;
+  box-shadow: var(--shadow), 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.prompter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  background: #1d1f27;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.prompter-head:active {
+  cursor: grabbing;
+}
+.prompter-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+}
+.prompter-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.prompter-edit {
+  flex: 1;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 12px 14px;
+  background: #0c0d11;
+  color: #f3f4f8;
+  font: 16px/1.5 var(--font);
+}
+.prompter-view {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: #000;
+}
+.prompter-view[hidden],
+.prompter-edit[hidden] {
+  display: none;
+}
+.prompter-view.mirror .prompter-content {
+  transform-origin: 50% 0;
+}
+.prompter-view.mirror {
+  transform: scaleX(-1);
+}
+.prompter-content {
+  padding: 0 7%;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.35;
+  will-change: transform;
+}
+.prompter-content p {
+  margin: 0 0 0.6em;
+  white-space: pre-wrap;
+}
+.prompter-content p.gap {
+  height: 0.9em;
+}
+.prompter-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 42%;
+  height: 0;
+  border-top: 2px solid rgba(255, 107, 61, 0.55);
+  pointer-events: none;
+}
+.prompter-guide::before {
+  content: '▶';
+  position: absolute;
+  left: 4px;
+  top: -11px;
+  color: #ff6b3d;
+  font-size: 14px;
+}
+.prompter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  background: #1d1f27;
+  font-size: 12px;
+}
+.prompter-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.prompter-ctl input[type='range'] {
+  width: 90px;
+}
+.prompter-ctl output {
+  min-width: 78px;
+  color: #aeb6c6;
+}
+.prompter-info {
+  margin-left: auto;
+  color: #aeb6c6;
+  font-variant-numeric: tabular-nums;
+}
+.prompter.running .prompter-head {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}

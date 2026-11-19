@@ -654,3 +654,169 @@ test('registrazione: se l’utente ferma la condivisione dal browser la registra
     assert.ok(c.duration >= 1.5, `la parte registrata fino a quel momento resta: ${c.duration}`);
   });
 });
+
+// ---------------------------------------------------------------- teleprompter
+const SCRIPT = Array.from({ length: 12 }, (_, i) => `Frase numero ${i + 1} del copione di prova, da leggere con calma.`).join('\n');
+
+async function openPrompter(page, text = SCRIPT) {
+  await page.click('#btn-teleprompter');
+  await page.waitForSelector('#prompter');
+  await page.fill('#prompter-text', text);
+}
+
+test('teleprompter: si apre, conta le parole senza gli appunti // e mostra la durata prevista', async () => {
+  await withApp(async ({ page }) => {
+    await openPrompter(page, 'uno due tre quattro cinque\n// questo è un appunto privato\nsei sette otto nove dieci');
+    assert.match(await page.textContent('#prompter-info'), /^10 parole · ≈ 0:\d\d$/);
+    await page.fill('#prompter-text', '');
+    assert.match(await page.textContent('#prompter-info'), /^0 parole/);
+    await page.fill('#prompter-text', 'uno due\n// nota\ntre');
+    await page.click('#prompter-mode');
+    const shown = await page.locator('.prompter-content p').allTextContents();
+    assert.deepEqual(shown, ['uno due', 'tre'], 'gli appunti non si leggono');
+    await page.click('#prompter-mode');
+    assert.equal(await page.inputValue('#prompter-text'), 'uno due\n// nota\ntre', 'il testo resta intero');
+    assert.equal(await page.locator('#prompter').count(), 1);
+    await page.click('#prompter-close');
+    assert.equal(await page.locator('#prompter').count(), 0);
+  });
+});
+
+test('teleprompter: scorre da solo, si ferma in pausa, riparte dall’inizio e finisce allo scadere del tempo', async () => {
+  await withApp(async ({ page }) => {
+    // 10 parole a 320 al minuto = circa 1,9 secondi
+    await openPrompter(page, 'uno due tre quattro cinque sei sette otto nove dieci');
+    await page.evaluate(() => {
+      const s = document.querySelector('#prompter-speed');
+      s.value = 320;
+      s.dispatchEvent(new Event('input'));
+    });
+    const off = () => page.evaluate(() => +document.querySelector('#prompter').dataset.offset);
+    await page.click('#prompter-play'); // passa subito in lettura e parte
+    assert.equal(await page.locator('#prompter.reading.running').count(), 1);
+    await page.waitForTimeout(500);
+    const mid = await off();
+    assert.ok(mid > 0, `è partito (${mid})`);
+    await page.click('#prompter-play'); // pausa
+    const frozen = await off();
+    await page.waitForTimeout(400);
+    assert.equal(await off(), frozen, 'in pausa non si muove');
+    assert.match(await page.textContent('#prompter-play'), /Avvia/);
+    await page.click('#prompter-play');
+    await page.waitForFunction(() => !document.querySelector('#prompter.running'), null, { timeout: 8000 });
+    const end = await page.evaluate(() => {
+      const v = document.querySelector('.prompter-view');
+      const c = document.querySelector('.prompter-content');
+      return { off: +document.querySelector('#prompter').dataset.offset, dist: Math.round(c.scrollHeight - v.clientHeight) };
+    });
+    assert.ok(Math.abs(end.off - end.dist) <= 1, `a fine copione è in fondo: ${end.off} vs ${end.dist}`);
+    await page.click('#prompter-reset');
+    assert.equal(await off(), 0);
+  });
+});
+
+test('teleprompter: raddoppiando la velocità il testo scorre circa il doppio più in fretta', async () => {
+  await withApp(async ({ page }) => {
+    await openPrompter(page, Array.from({ length: 60 }, (_, i) => `parola${i} `).join('\n'));
+    const measure = async (wpm) => {
+      await page.evaluate((v) => {
+        const s = document.querySelector('#prompter-speed');
+        s.value = v;
+        s.dispatchEvent(new Event('input'));
+      }, wpm);
+      await page.click('#prompter-reset');
+      await page.click('#prompter-play');
+      await page.waitForTimeout(1200);
+      const o = await page.evaluate(() => +document.querySelector('#prompter').dataset.offset);
+      await page.click('#prompter-play');
+      return o;
+    };
+    const slow = await measure(100);
+    const fast = await measure(200);
+    assert.ok(slow > 0);
+    const ratio = fast / slow;
+    assert.ok(ratio > 1.6 && ratio < 2.4, `rapporto ${ratio.toFixed(2)} (lento ${slow}, veloce ${fast})`);
+  });
+});
+
+test('teleprompter: specchio, dimensione del testo, spostamento e ricordo di copione e posizione', async () => {
+  await withApp(async ({ page }) => {
+    await openPrompter(page);
+    await page.click('#prompter-mode');
+    await page.check('#prompter-mirror');
+    const m = await page.evaluate(() => getComputedStyle(document.querySelector('.prompter-view')).transform);
+    assert.match(m, /^matrix\(-1,/, `specchiato: ${m}`);
+    await page.evaluate(() => {
+      const s = document.querySelector('#prompter-size');
+      s.value = 70;
+      s.dispatchEvent(new Event('input'));
+    });
+    assert.equal(await page.evaluate(() => document.querySelector('.prompter-content').style.fontSize), '70px');
+    // trascinando la barra del titolo si sposta
+    const before = await page.locator('#prompter').boundingBox();
+    const head = await page.locator('.prompter-head').boundingBox();
+    await page.mouse.move(head.x + 60, head.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(head.x + 160, head.y + 90, { steps: 6 });
+    await page.mouse.up();
+    const after = await page.locator('#prompter').boundingBox();
+    near(after.x - before.x, 100, 3, 'spostato a destra');
+    near(after.y - before.y, 80, 3, 'spostato in basso');
+    await page.click('#prompter-close');
+    await page.reload();
+    await page.waitForFunction(() => window.__ciak && document.querySelector('.timeline'));
+    await page.click('#btn-teleprompter');
+    await page.waitForSelector('#prompter');
+    assert.equal(await page.inputValue('#prompter-text'), SCRIPT, 'il copione è stato ricordato');
+    const back = await page.locator('#prompter').boundingBox();
+    near(back.x, after.x, 2, 'stessa posizione');
+    near(back.y, after.y, 2);
+    assert.equal(await page.isChecked('#prompter-mirror'), true);
+    assert.equal(await page.inputValue('#prompter-size'), '70');
+  });
+});
+
+test('teleprompter: gli spazi digitati nel copione o premuti nella finestra non fanno partire il montaggio', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('a.webm')]);
+    await addMedia(page, 0);
+    await openPrompter(page, '');
+    await page.click('#prompter-text');
+    await page.keyboard.type('una frase con degli spazi');
+    assert.equal(await page.evaluate(() => window.__ciak.player.playing), false);
+    await page.click('#prompter-mode');
+    await page.focus('#prompter-speed');
+    await page.keyboard.press('Space');
+    assert.equal(await page.evaluate(() => window.__ciak.player.playing), false, 'Spazio nella finestra non avvia il video');
+    assert.equal(await page.locator('#prompter.running').count(), 1, 'ma avvia il teleprompter');
+  });
+});
+
+test('teleprompter: parte e si ferma insieme alla registrazione', async () => {
+  await withApp(async ({ page }) => {
+    await openPrompter(page);
+    await page.click('#prompter-close');
+    await page.click('#btn-record-screen');
+    await page.selectOption('#rec-mode', 'webcam');
+    await page.check('#rec-prompter');
+    await page.click('[data-act="rec-go"]');
+    await page.waitForSelector('.rec-bar');
+    await page.waitForSelector('#prompter.running');
+    await page.waitForTimeout(700);
+    assert.ok(+(await page.evaluate(() => document.querySelector('#prompter').dataset.offset)) > 0, 'scorre');
+    await page.click('#btn-rec-stop');
+    await page.waitForFunction(() => !document.querySelector('.rec-bar'));
+    assert.equal(await page.locator('#prompter.running').count(), 0, 'si ferma con la registrazione');
+    assert.equal(await page.locator('#prompter').count(), 1, 'resta aperto per rileggere');
+  });
+});
+
+test('libreria: tutti i pulsanti dei media restano dentro il pannello (vanno a capo) anche a pannello stretto', async () => {
+  await withApp(async ({ page }) => {
+    const box = await page.locator('.library').boundingBox();
+    for (const id of ['btn-import', 'btn-record', 'btn-record-screen', 'btn-teleprompter']) {
+      const b = await page.locator(`#${id}`).boundingBox();
+      assert.ok(b.x >= box.x - 1 && b.x + b.width <= box.x + box.width + 1, `#${id} dentro la libreria (${Math.round(b.x)}–${Math.round(b.x + b.width)} su ${Math.round(box.x)}–${Math.round(box.x + box.width)})`);
+    }
+  });
+});

@@ -142,10 +142,11 @@ export class Library {
         h('button', { class: `chip${this.#filter === id ? ' on' : ''}`, type: 'button', 'data-f': id, onClick: () => { this.#filter = id; for (const c of chips.children) c.classList.toggle('on', c.dataset.f === id); this.#mediaSig = ''; this.#renderMediaGrid(); } }, label)));
     this.mediaGrid = h('div', { class: 'media-grid', role: 'list' });
     const root = h('div', { class: 'lib-pane media-pane' },
-      h('div', { class: 'lib-actions' },
+      h('div', { class: 'lib-actions wrap' },
         h('button', { class: 'btn primary', type: 'button', id: 'btn-import', onClick: () => file.click() }, icon('upload', 16), 'Importa'),
         this.recBtn,
         h('button', { class: 'btn', type: 'button', id: 'btn-record-screen', title: 'Registra lo schermo, la webcam o entrambi', onClick: () => a.actions.openRecorder() }, icon('camera', 16), 'Registra schermo/webcam'),
+        h('button', { class: 'btn', type: 'button', id: 'btn-teleprompter', title: 'Copione che scorre da solo mentre registri', onClick: () => a.actions.toggleTeleprompter() }, icon('captions', 16), 'Teleprompter'),
         globalThis.ciakDesktop?.transcodeFile ? h('button', { class: 'btn', type: 'button', id: 'btn-transcode', title: 'Comprimi o converti un video qualsiasi', onClick: () => a.actions.openTranscode() }, icon('download', 16), 'Comprimi/converti') : null,
         globalThis.ciakDesktop?.ttsVoices ? h('button', { class: 'btn', type: 'button', id: 'btn-tts', title: 'Trasforma un testo in voce (sintetizzatore del computer)', onClick: () => a.actions.openSpeech() }, icon('type', 16), 'Voce da testo') : null,
         file),
