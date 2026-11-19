@@ -25,6 +25,16 @@ const clamp01 = (v) => Math.min(1, Math.max(0, v));
 const clamp255 = (v) => Math.min(255, Math.max(0, Math.round(v)));
 const run = (frames, grade) => frames.map((f) => ({ ...f, data: applyGrade(new Uint8ClampedArray(f.data), f.w, f.h, grade) }));
 const spread = (mid) => Math.max(...mid) - Math.min(...mid);
+/** Come il programma: correzione, poi saturazione (filtro CSS saturate). */
+const runFull = (frames, result) => run(frames, result.grade).map((f) => {
+  const k = 1 + result.adjust.saturation / 100;
+  const d = f.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const l = 0.213 * d[i] + 0.715 * d[i + 1] + 0.072 * d[i + 2];
+    for (let c = 0; c < 3; c++) d[i + c] = Math.min(255, Math.max(0, l + (d[i + c] - l) * k));
+  }
+  return f;
+});
 
 test('analyze: media, percentili, dominante e vivacità di immagini note', () => {
   const grey = analyze([frame({ lo: 0, hi: 1 })]);
@@ -124,7 +134,7 @@ test('matchColors: il clip scuro e freddo prende luminosità e dominante del rif
   const src = [frame({ lo: 0.03, hi: 0.5, cast: [0.8, 0.95, 1], seed: 7 })];
   const ref = analyze([frame({ lo: 0.1, hi: 0.95, cast: [1, 0.88, 0.7], seed: 8 })]);
   const r = matchColors(src, ref);
-  const out = analyze(run(src, r.grade));
+  const out = analyze(runFull(src, r));
   assert.ok(Math.abs(out.q(0.5) - ref.q(0.5)) < 0.06, `mediana ${out.q(0.5).toFixed(2)} vs ${ref.q(0.5).toFixed(2)}`);
   assert.ok(Math.abs(out.q(0.9) - ref.q(0.9)) < 0.08, 'luci');
   const ratio = (m) => [m[0] / m[1], m[2] / m[1]];

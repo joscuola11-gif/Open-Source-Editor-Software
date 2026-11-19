@@ -1377,3 +1377,107 @@ test('ritaglio: con un angolo e il rapporto fisso la forma resta quella scelta',
     near(((1 - crop.l - crop.r) * media.width) / ((1 - crop.t - crop.b) * media.height), 16 / 9, 0.01, 'rapporto 16:9 mantenuto');
   });
 });
+
+// ---------------------------------------------------------------- colore automatico
+/** Misure sull'anteprima: luminosità media, escursione (p5–p95) e dominante (scarto fra i canali medi). */
+async function previewStats(page) {
+  await page.evaluate(() => window.__ciak.player.settle());
+  return page.evaluate(() => {
+    const c = window.__ciak.preview.canvas;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const hist = new Array(256).fill(0);
+    let n = 0;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let mn = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const l = Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]);
+      hist[l]++;
+      n++;
+      if (l >= 38 && l <= 217) { // toni medi, come li misura il programma
+        r += d[i];
+        g += d[i + 1];
+        b += d[i + 2];
+        mn++;
+      }
+    }
+    n = Math.max(1, n);
+    const mm = Math.max(1, mn);
+    const total = hist.reduce((x, y) => x + y, 0);
+    const q = (p) => { let a = 0; for (let i = 0; i < 256; i++) { a += hist[i]; if (a >= p * total) return i / 255; } return 1; };
+    const m = [r / mm / 255, g / mm / 255, b / mm / 255];
+    return { mean: (m[0] + m[1] + m[2]) / 3, q05: q(0.05), q50: q(0.5), q95: q(0.95), cast: Math.max(...m) - Math.min(...m), m };
+  });
+}
+
+test('colore automatico: un’immagine scura e piatta diventa luminosa e con contrasto, si annulla', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('dark.png')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await seek(page, 0.5);
+    const before = await previewStats(page);
+    assert.ok(before.q95 < 0.45, `parte scura (${before.q95.toFixed(2)})`);
+    await inspectorTab(page, 'Regolazione');
+    await page.locator('details.section summary', { hasText: 'Colore automatico' }).click();
+    await page.click('#btn-auto-adjust');
+    await page.waitForSelector('.toast.success:has-text("Colori")');
+    await seek(page, 0.5);
+    const after = await previewStats(page);
+    assert.ok(after.q50 > before.q50 + 0.12, `più luminosa: mediana ${before.q50.toFixed(2)} → ${after.q50.toFixed(2)}`);
+    assert.ok(after.q95 - after.q05 > before.q95 - before.q05 + 0.2, `più contrasto: ${(before.q95 - before.q05).toFixed(2)} → ${(after.q95 - after.q05).toFixed(2)}`);
+    const g = await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].grade);
+    assert.ok(g.curve.some((v, i) => Math.abs(v - [0, 25, 50, 75, 100][i]) > 3) || g.exposure > 0, 'la curva o l’esposizione sono cambiate');
+    await page.click('#btn-undo');
+    await seek(page, 0.5);
+    const back = await previewStats(page);
+    assert.ok(Math.abs(back.q50 - before.q50) < 0.01, 'annullato: torna com’era');
+  });
+});
+
+test('colore automatico: toglie una dominante blu', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('cast.png')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await seek(page, 0.5);
+    const before = await previewStats(page);
+    assert.ok(before.m[2] > before.m[0] * 1.3, 'dominante blu di partenza');
+    await page.evaluate(() => window.__ciak.actions.autoAdjust(100));
+    await page.waitForSelector('.toast.success:has-text("Colori")');
+    await seek(page, 0.5);
+    const after = await previewStats(page);
+    assert.ok(after.cast < before.cast * 0.6, `dominante ${before.cast.toFixed(3)} → ${after.cast.toFixed(3)}`);
+  });
+});
+
+test('colore automatico: «Uniforma a quel clip» avvicina luminosità e colore di un clip a quelli di un altro', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('warm.png'), m.f('dark.png')]);
+    await addMedia(page, 0); // warm: riferimento
+    await page.evaluate(() => window.__ciak.player.seek(5.1));
+    await addMedia(page, 1); // dark
+    await page.waitForFunction(() => document.querySelectorAll('.clip').length === 2);
+    const ids = await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).sort((a, b) => a.start - b.start).map((c) => c.id));
+    await seek(page, 0.5);
+    const ref = await previewStats(page);
+    await page.evaluate((id) => window.__ciak.selection.set([id]), ids[1]);
+    const t2 = await page.evaluate((id) => window.__ciak.store.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id).start + 0.5, ids[1]);
+    await seek(page, t2);
+    const before = await previewStats(page);
+    await inspectorTab(page, 'Regolazione');
+    await page.locator('details.section summary', { hasText: 'Colore automatico' }).click();
+    await page.selectOption('#sel-match-ref', ids[0]);
+    await page.click('#btn-color-match');
+    await page.waitForSelector('.toast.success:has-text("Colori")');
+    await seek(page, t2);
+    const after = await previewStats(page);
+    assert.ok(Math.abs(after.q50 - ref.q50) < Math.abs(before.q50 - ref.q50) * 0.5, `luminosità: ${before.q50.toFixed(2)} → ${after.q50.toFixed(2)} (riferimento ${ref.q50.toFixed(2)})`);
+    const warmth = (s) => s.m[0] / s.m[2];
+    assert.ok(Math.abs(warmth(after) - warmth(ref)) < Math.abs(warmth(before) - warmth(ref)) * 0.6, `calore ${warmth(before).toFixed(2)} → ${warmth(after).toFixed(2)} (rif. ${warmth(ref).toFixed(2)})`);
+    // il riferimento non cambia
+    const refClip = await page.evaluate((id) => window.__ciak.store.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id).grade.curve, ids[0]);
+    assert.deepEqual(refClip, [0, 25, 50, 75, 100]);
+  });
+});

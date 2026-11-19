@@ -87,7 +87,9 @@ function applyColorResult(clip, r) {
   g.highlights = r.grade.highlights;
   g.shadows = r.grade.shadows;
   g.curve = [...r.grade.curve];
+  g.wheels.shadows = { ...r.grade.wheels.shadows };
   g.wheels.mids = { ...r.grade.wheels.mids };
+  g.wheels.highs = { ...r.grade.wheels.highs };
   clip.adjust.saturation = r.adjust.saturation;
 }
 

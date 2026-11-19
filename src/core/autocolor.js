@@ -129,7 +129,7 @@ export function fitCurve(target, weights, amount = 1) {
 const weightsOf = (stats) => Float64Array.from(stats.hist, (c) => (stats.n ? c / stats.n : 1 / 256));
 
 /** Ruota «toni medi» che sposta il colore medio verso il grigio (o verso un bersaglio): offset RGB (somma zero) → {hue, amount}. */
-export function wheelFor(offset) {
+export function wheelFor(offset, gain = 1) {
   const [dr, dg, db] = offset;
   const mag = Math.hypot(dr, dg, db);
   if (mag < 1e-4) return { hue: 0, amount: 0 };
@@ -141,20 +141,39 @@ export function wheelFor(offset) {
   const c = [[1, f, 0], [q, 1, 0], [0, 1, f], [0, q, 1], [f, 0, 1], [1, 0, q]][Math.floor(x) % 6];
   const m = (c[0] + c[1] + c[2]) / 3;
   const dirMag = Math.hypot(c[0] - m, c[1] - m, c[2] - m);
-  return { hue: +hue.toFixed(1), amount: clamp((mag / (dirMag * 0.5)) * 100, 0, 100) };
+  return { hue: +hue.toFixed(1), amount: clamp((mag / (dirMag * 0.5 * gain)) * 100, 0, 100) };
 }
 
+/** La stessa spinta di colore sulle tre ruote (ombre, medi, luci): agisce su tutta la luminosità, circa 1,5 volte più forte della sola ruota dei medi. */
+export const WB_GAIN = 1.5;
 const gradeWith = (curve, wheel, extra = {}) => {
   const g = defaultGrade();
   g.curve = curve;
-  g.wheels.mids = { hue: wheel.hue, amount: +wheel.amount.toFixed(1) };
+  const w = { hue: wheel.hue, amount: +wheel.amount.toFixed(1) };
+  g.wheels.shadows = { ...w };
+  g.wheels.mids = { ...w };
+  g.wheels.highs = { ...w };
   return Object.assign(g, extra);
 };
 
 const copyFrames = (frames) => frames.map((f) => ({ ...f, data: new Uint8ClampedArray(f.data) }));
-const applied = (frames, grade) => {
+/** Come CSS `saturate()`: s = 1 invariato, 0 grigio, 2 doppio. */
+function saturate(data, s) {
+  if (s === 1) return;
+  for (let i = 0; i < data.length; i += 4) {
+    const l = 0.213 * data[i] + 0.715 * data[i + 1] + 0.072 * data[i + 2];
+    data[i] = clamp(l + (data[i] - l) * s, 0, 255);
+    data[i + 1] = clamp(l + (data[i + 1] - l) * s, 0, 255);
+    data[i + 2] = clamp(l + (data[i + 2] - l) * s, 0, 255);
+  }
+}
+/** Fotogrammi dopo la correzione (curva, ruote…) e dopo la saturazione, nello stesso ordine in cui lo fa il programma. */
+const applied = (frames, grade, sat = 0) => {
   const out = copyFrames(frames);
-  for (const f of out) applyGrade(f.data, f.w, f.h, grade);
+  for (const f of out) {
+    applyGrade(f.data, f.w, f.h, grade);
+    saturate(f.data, 1 + sat / 100);
+  }
   return out;
 };
 
@@ -199,9 +218,9 @@ export function autoAdjust(frames, { amount = 1 } = {}) {
     const cast = Math.hypot(mid[0] - gray, mid[1] - gray, mid[2] - gray);
     if (cast < 0.012) break;
     // sommo la nuova correzione a quella già presente (in forma di offset)
-    const prev = wheel.amount > 0 ? hueDir(wheel.hue).map((v) => v * (wheel.amount / 100) * 0.5) : [0, 0, 0];
+    const prev = wheel.amount > 0 ? hueDir(wheel.hue).map((v) => v * (wheel.amount / 100) * 0.5 * WB_GAIN) : [0, 0, 0];
     const add = grayOffset(mid, 0.9 * k);
-    wheel = wheelFor([prev[0] + add[0], prev[1] + add[1], prev[2] + add[2]]);
+    wheel = wheelFor([prev[0] + add[0], prev[1] + add[1], prev[2] + add[2]], WB_GAIN);
     grade = gradeWith(curve, wheel, { exposure });
   }
   // ombre e luci tagliate
@@ -236,20 +255,21 @@ export function matchColors(srcFrames, refStats, { amount = 1 } = {}) {
   // uscita desiderata per ogni livello: il livello che ha la stessa «posizione» nella distribuzione del riferimento
   const target = Float64Array.from({ length: 256 }, (_, i) => refStats.q(cdfAt(src, i / 255)));
   const curve = fitCurve(target, weightsOf(src), k);
+  // vivacità: si decide dopo la curva e prima della dominante, e la dominante viene corretta tenendone conto
+  let grade = gradeWith(curve, { hue: 0, amount: 0 });
+  const afterCurve = analyze(applied(srcFrames, grade));
+  const sat = Math.round(clamp((refStats.chroma / Math.max(0.02, afterCurve.chroma) - 1) * 100, -40, 60) * k);
   let wheel = { hue: 0, amount: 0 };
-  let grade = gradeWith(curve, wheel);
-  for (let pass = 0; pass < 3; pass++) {
-    const mid = analyze(applied(srcFrames, grade)).mid;
+  for (let pass = 0; pass < 4; pass++) {
+    const mid = analyze(applied(srcFrames, grade, sat)).mid;
     const diff = [refStats.mid[0] - mid[0], refStats.mid[1] - mid[1], refStats.mid[2] - mid[2]];
     const mean = (diff[0] + diff[1] + diff[2]) / 3;
     const off = diff.map((v) => (v - mean) * 0.9 * k); // solo la parte «di colore», la luminosità l'ha già fatta la curva
-    if (Math.hypot(...off) < 0.008) break;
-    const prev = wheel.amount > 0 ? hueDir(wheel.hue).map((v) => v * (wheel.amount / 100) * 0.5) : [0, 0, 0];
-    wheel = wheelFor([prev[0] + off[0], prev[1] + off[1], prev[2] + off[2]]);
+    if (Math.hypot(...off) < 0.006) break;
+    const prev = wheel.amount > 0 ? hueDir(wheel.hue).map((v) => v * (wheel.amount / 100) * 0.5 * WB_GAIN) : [0, 0, 0];
+    wheel = wheelFor([prev[0] + off[0], prev[1] + off[1], prev[2] + off[2]], WB_GAIN);
     grade = gradeWith(curve, wheel);
   }
-  const after = analyze(applied(srcFrames, grade));
-  const ratio = refStats.chroma / Math.max(0.02, after.chroma);
-  const sat = clamp((ratio - 1) * 100, -40, 60) * k;
-  return { grade, adjust: { saturation: Math.round(sat) }, before: src, after };
+  const after = analyze(applied(srcFrames, grade, sat));
+  return { grade, adjust: { saturation: sat }, before: src, after };
 }

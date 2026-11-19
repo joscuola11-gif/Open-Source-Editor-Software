@@ -647,9 +647,27 @@ export class Inspector {
   // Regolazione colore + chroma key
   // ---------------------------------------------------------------------------
 
+  /** Correzione automatica e «copia i colori da un altro clip». */
+  #autoColorSection(clip) {
+    const { actions, store } = this.app;
+    const amount = h('input', { type: 'range', id: 'rng-auto-amount', min: 0, max: 100, step: 5, value: prefs.get('autoColorAmount', 100), 'aria-label': 'Quantità di correzione' });
+    const out = h('output', { class: 'num-wrap' }, `${amount.value}%`);
+    amount.addEventListener('input', () => { out.textContent = `${amount.value}%`; prefs.set('autoColorAmount', +amount.value); });
+    const others = allClips(store.project).filter((c) => (c.kind === 'video' || c.kind === 'image') && c.id !== clip.id).sort((a, b) => a.start - b.start);
+    const sel = h('select', { id: 'sel-match-ref', 'aria-label': 'Clip da cui copiare i colori' }, others.length ? others.map((c) => h('option', { value: c.id }, `${c.name || 'Clip'} · ${formatDuration(c.start)}`)) : [h('option', { value: '' }, 'Nessun altro clip')]);
+    return section('Colore automatico', [
+      h('p', { class: 'hint' }, 'Misura luminosità, contrasto e dominante di colore del clip e li corregge con curva, ruote colore e saturazione: puoi ritoccare tutto qui sotto.'),
+      h('div', { class: 'ctl slider' }, h('label', { class: 'ctl-label' }, 'Quantità'), amount, out),
+      h('div', { class: 'btn-row wrap' }, h('button', { class: 'btn small primary', type: 'button', id: 'btn-auto-adjust', onClick: () => actions.autoAdjust(+amount.value) }, icon('wand', 14), 'Correzione automatica')),
+      h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Copia i colori da'), sel),
+      h('div', { class: 'btn-row wrap' }, h('button', { class: 'btn small', type: 'button', id: 'btn-color-match', disabled: !others.length, onClick: () => actions.matchColors(sel.value, +amount.value) }, 'Uniforma a quel clip')),
+    ], { open: false });
+  }
+
   #adjustTab(clip) {
     const adj = (label, key, min, max, def = 0, unit = '') => this.S({ label, min, max, step: 1, unit, get: (c) => c.adjust[key], set: (c, v) => { c.adjust[key] = v; }, def, history: `Regolazione ${label}` });
     const out = [
+      ...(clip.kind === 'video' || clip.kind === 'image' ? [this.#autoColorSection(clip)] : []),
       section('Filtro', [
         this.#add(selectControl(this.ctx, { label: 'Preset', options: FILTERS.map((f) => ({ id: f.id, label: f.label })), get: (c) => c.filter.id, set: (c, v) => { c.filter.id = v; }, history: 'Filtro' })),
         this.S({ label: 'Intensità', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.filter.intensity * 100, set: (c, v) => { c.filter.intensity = v / 100; }, def: 100, history: 'Intensità filtro' }),
