@@ -2391,3 +2391,84 @@ input[type='range'] {
 .crop-handle.b { left: calc(50% - 14px); bottom: -7px; width: 28px; height: 12px; cursor: ns-resize; }
 .crop-handle.l { top: calc(50% - 14px); left: -7px; width: 12px; height: 28px; cursor: ew-resize; }
 .crop-handle.r { top: calc(50% - 14px); right: -7px; width: 12px; height: 28px; cursor: ew-resize; }
+
+/* ---- sottotitoli automatici ---- */
+.cap-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(720px, 86vw);
+}
+.cap-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cap-row > * {
+  flex: 1;
+  min-width: 200px;
+}
+.cap-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cap-field[hidden],
+.cap-model-box[hidden],
+.cap-script-box[hidden],
+.cap-check[hidden],
+.cap-row[hidden] {
+  display: none;
+}
+.cap-select,
+.cap-script,
+.cap-text {
+  width: 100%;
+  background: var(--panel-2, var(--panel));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+.cap-script,
+.cap-text {
+  resize: vertical;
+}
+.cap-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cap-run {
+  display: flex;
+  gap: 8px;
+}
+.cap-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.cap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 38vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+.cap-row-item {
+  display: grid;
+  grid-template-columns: 8.5em 1fr auto;
+  gap: 8px;
+  align-items: start;
+}
+.cap-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.exp-status.error {
+  color: var(--danger, #ff6b6b);
+}

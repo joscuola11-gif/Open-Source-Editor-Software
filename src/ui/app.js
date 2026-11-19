@@ -26,6 +26,7 @@ import { Storage } from '../engine/storage.js';
 import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export.js';
 import { Teleprompter } from './teleprompter.js';
 import { openProjectsDialog } from './projects-dialog.js';
+import { openCaptionsDialog } from './captions-dialog.js';
 import { saveCurrentAsTemplate } from './templates-panel.js';
 import { layoutClips } from '../core/layouts.js';
 import { applyCameraMove, clearCameraMove } from '../core/camera.js';
@@ -975,24 +976,39 @@ export class App {
       },
 
       // ---- sottotitoli ------------------------------------------------------------------
+      /**
+       * Crea i clip dei sottotitoli sulla traccia «Sottotitoli». `cues` = [{start, end, text, words?: [{t, w}]}] in secondi della timeline.
+       * `style`: uno di SUBTITLE_STYLES (di base «karaoke» se le parole hanno i tempi, altrimenti «classic»); `replace`: toglie prima i sottotitoli già presenti.
+       */
+      addSubtitleCues(cues, { shift = 0, label = 'Aggiungi sottotitoli', style = null, replace = false } = {}) {
+        return app.commit(label, (d) => {
+          if (replace) {
+            const old = allClips(d).filter((c) => c.role === 'subtitle').map((c) => c.id);
+            if (old.length) deleteClips(d, old);
+          }
+          let sub = d.tracks.find((t) => t.type === 'video' && t.name === 'Sottotitoli');
+          if (!sub) sub = addTrack(d, 'video', { index: 0, name: 'Sottotitoli' });
+          for (const cue of cues) {
+            const look = structuredClone(SUBTITLE_STYLES[style && SUBTITLE_STYLES[style] ? style : cue.words ? 'karaoke' : 'classic']);
+            const text = { ...look, content: cue.text };
+            if (cue.words) text.words = cue.words.map((w) => ({ t: w.t, w: w.w }));
+            const clip = createClip('text', { name: cue.text.replace(/\s+/g, ' ').slice(0, 30), role: 'subtitle', start: cue.start + shift, duration: Math.max(0.2, cue.end - cue.start), text, transform: { y: 0.36 } });
+            const track = trackWithRoom(d, 'video', clip.start, clip.duration, { preferId: sub.id, fromTop: true });
+            addClip(d, track.id, clip, clip.start);
+          }
+        });
+      },
+      /** Sottotitoli automatici: finestra per riconoscere il parlato, allinearlo a un testo o segnare solo i tempi. */
+      openCaptions() {
+        openCaptionsDialog(app);
+      },
       async importSubtitles(file) {
         try {
           const { format, cues } = parseSubtitles(await file.text(), file.name);
           if (!cues.length) return toast('Nessun sottotitolo valido nel file', { type: 'warn' });
           // il testo semplice non ha tempi: parte dalla testina
           const shift = format === 'txt' ? quantize(app.player.time, app.store.project.settings.fps) : 0;
-          const r = app.commit('Importa sottotitoli', (d) => {
-            let sub = d.tracks.find((t) => t.type === 'video' && t.name === 'Sottotitoli');
-            if (!sub) sub = addTrack(d, 'video', { index: 0, name: 'Sottotitoli' });
-            for (const cue of cues) {
-              const style = structuredClone(SUBTITLE_STYLES[cue.words ? 'karaoke' : 'classic']);
-              const text = { ...style, content: cue.text };
-              if (cue.words) text.words = cue.words.map((w) => ({ t: w.t, w: w.w }));
-              const clip = createClip('text', { name: cue.text.slice(0, 30), role: 'subtitle', start: cue.start + shift, duration: Math.max(0.2, cue.end - cue.start), text, transform: { y: 0.36 } });
-              const track = trackWithRoom(d, 'video', clip.start, clip.duration, { preferId: sub.id, fromTop: true });
-              addClip(d, track.id, clip, clip.start);
-            }
-          });
+          const r = A.addSubtitleCues(cues, { shift, label: 'Importa sottotitoli' });
           if (r.ok) toast(`${cues.length} sottotitoli importati (${format.toUpperCase()})`, { type: 'success' });
         } catch (e) {
           toast(`Importazione dei sottotitoli non riuscita: ${e.message}`, { type: 'error' });

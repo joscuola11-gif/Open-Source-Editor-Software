@@ -188,3 +188,33 @@ export function checkCues(cues, o = {}) {
   });
   return issues;
 }
+
+/**
+ * Porta i sottotitoli dal tempo dell'audio analizzato al tempo della timeline: `offset` = dove inizia quell'audio nella timeline,
+ * `speed` = velocità del clip da cui viene (a 2× l'audio dura la metà). Con `karaoke` ogni sottotitolo porta le parole con i loro tempi
+ * (relativi all'inizio del sottotitolo) per l'effetto parola per parola. I testi vuoti si scartano.
+ * @returns {Array<{start:number,end:number,text:string,words?:Array<{t:number,w:string}>}>}
+ */
+export function cuesForTimeline(cues, { offset = 0, speed = 1, karaoke = false } = {}) {
+  const k = speed > 0 ? 1 / speed : 1;
+  const out = [];
+  for (const c of cues) {
+    const text = String(c.text ?? '').trim();
+    if (!text) continue;
+    const start = offset + c.start * k;
+    const end = offset + c.end * k;
+    if (!(end > start) || !Number.isFinite(start)) continue;
+    const cue = { start, end, text };
+    // le parole valgono solo se coincidono ancora con il testo (se l'utente l'ha corretto si ricalcolano da sole)
+    const ws = Array.isArray(c.words) ? c.words : [];
+    if (karaoke && ws.length >= 2 && ws.map((w) => w.text).join('').replace(/\s/g, '') === text.replace(/\s/g, '')) {
+      let last = 0;
+      cue.words = ws.map((w) => {
+        last = Math.max(last, Math.max(0, (w.start - c.start) * k));
+        return { t: last, w: w.text };
+      });
+    }
+    out.push(cue);
+  }
+  return out;
+}

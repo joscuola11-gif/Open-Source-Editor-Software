@@ -651,7 +651,7 @@ test('desktop: esporta in MP4 vero (H.264/AAC, frequenza costante, faststart) tr
   try {
     // il ponte espone solo ciò che serve e la pagina continua a non vedere Node
     const bridge = await win.evaluate(() => ({ keys: Object.keys(window.ciakDesktop).sort(), node: typeof require, proc: typeof process }));
-    assert.deepEqual(bridge.keys, ['cancelConvert', 'chooseSource', 'convertAudio', 'convertToMp4', 'isDesktop', 'listSources', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
+    assert.deepEqual(bridge.keys, ['asrAvailable', 'asrTranscribe', 'cancelConvert', 'chooseSource', 'convertAudio', 'convertToMp4', 'isDesktop', 'listSources', 'mp4Available', 'onAsrProgress', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
     assert.equal(`${bridge.node}|${bridge.proc}`, 'undefined|undefined');
     // dati non validi e percorsi non autorizzati non fanno danni
     const bad = await win.evaluate(() => window.ciakDesktop.convertToMp4(new Uint8Array(10), {}));

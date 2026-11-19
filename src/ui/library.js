@@ -361,7 +361,9 @@ export class Library {
     this.subList = h('div', { class: 'sub-list', role: 'list' });
     const root = h('div', { class: 'lib-pane' },
       h('div', { class: 'lib-actions wrap' },
-        h('button', { class: 'btn primary', type: 'button', id: 'btn-import-srt', title: 'SRT, VTT, ASS, LRC o testo semplice', onClick: () => file.click() }, icon('upload', 16), 'Importa'),
+        h('button', { class: 'btn primary', type: 'button', id: 'btn-auto-captions', title: 'Riconosce il parlato e crea i sottotitoli già a tempo', onClick: () => a.actions.openCaptions() }, icon('sparkles', 16), 'Sottotitoli automatici')),
+      h('div', { class: 'lib-actions wrap' },
+        h('button', { class: 'btn', type: 'button', id: 'btn-import-srt', title: 'SRT, VTT, ASS, LRC o testo semplice', onClick: () => file.click() }, icon('upload', 16), 'Importa'),
         h('button', { class: 'btn', type: 'button', id: 'btn-add-sub', onClick: () => a.actions.addSubtitleHere() }, icon('plus', 16), 'Aggiungi qui'),
         h('span', { class: 'inline-pair' }, fmt, h('button', { class: 'btn', type: 'button', id: 'btn-export-srt', onClick: () => a.actions.exportSubtitles(fmt.value) }, icon('download', 16), 'Esporta')), file),
       h('div', { class: 'lib-actions wrap' },

@@ -15,6 +15,13 @@ contextBridge.exposeInMainWorld('ciakDesktop', {
   transcodeFile: (options) => ipcRenderer.invoke('ciak:transcode-file', options),
   ttsVoices: () => ipcRenderer.invoke('ciak:tts-voices'),
   tts: (text, options) => ipcRenderer.invoke('ciak:tts', text, options),
+  asrAvailable: () => ipcRenderer.invoke('ciak:asr-available'),
+  asrTranscribe: (samples, options) => ipcRenderer.invoke('ciak:asr-transcribe', samples, options),
+  onAsrProgress: (callback) => {
+    const handler = (_event, value) => callback(value);
+    ipcRenderer.on('ciak:asr-progress', handler);
+    return () => ipcRenderer.removeListener('ciak:asr-progress', handler);
+  },
   cancelConvert: () => ipcRenderer.invoke('ciak:convert-cancel'),
   showInFolder: (filePath) => ipcRenderer.invoke('ciak:reveal', filePath),
   onConvertProgress: (callback) => {

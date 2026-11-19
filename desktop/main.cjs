@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const tts = require('./tts.cjs');
+const { createAsr } = require('./asr.cjs');
 
 const APP_FILE = path.join(__dirname, '..', 'dist', 'ciak-studio.html');
 const APP_URL = pathToFileURL(APP_FILE).href;
@@ -458,6 +459,47 @@ ipcMain.handle('ciak:tts', async (event, text, options = {}) => {
   try {
     const wav = await tts.synthesize(String(text ?? ''), { voice: typeof options.voice === 'string' ? options.voice : undefined, rate: Number(options.rate) || 1 });
     return { ok: true, wav: wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// ---- riconoscimento vocale (sottotitoli automatici) ------------------------------------------------------------
+// Whisper locale (desktop/asr.cjs). I modelli si scaricano la prima volta (serve internet) e restano in %APPDATA%/…/modelli.
+// Per le prove: CIAK_ASR_MODELS = cartella con i modelli già pronti, e niente rete (ignorata nel programma impacchettato).
+let asrEngine = null;
+function asr() {
+  if (!asrEngine) {
+    const testModels = !app.isPackaged && process.env.CIAK_ASR_MODELS ? process.env.CIAK_ASR_MODELS : null;
+    const bundled = path.join(process.resourcesPath || '', 'models');
+    asrEngine = createAsr({
+      cacheDir: path.join(app.getPath('userData'), 'modelli'),
+      localModelsDir: testModels ?? (fs.existsSync(bundled) ? bundled : null),
+      allowRemote: !testModels,
+    });
+  }
+  return asrEngine;
+}
+
+ipcMain.handle('ciak:asr-available', async (event) => {
+  assertOurs(event);
+  const a = asr();
+  const r = await a.available();
+  return { ...r, models: Object.fromEntries(Object.entries(a.models).map(([k, v]) => [k, { label: v.label, mb: v.mb }])), languages: a.languages };
+});
+
+ipcMain.handle('ciak:asr-transcribe', async (event, samples, options = {}) => {
+  assertOurs(event);
+  try {
+    if (!(samples instanceof Float32Array) && !(samples instanceof ArrayBuffer)) throw new Error('Audio non valido.');
+    const input = samples instanceof ArrayBuffer ? new Float32Array(samples) : samples;
+    const sender = event.sender;
+    const r = await asr().transcribe(input, {
+      language: typeof options.language === 'string' ? options.language : 'it',
+      model: typeof options.model === 'string' ? options.model : 'tiny',
+      onProgress: (p) => !sender.isDestroyed() && sender.send('ciak:asr-progress', p),
+    });
+    return { ok: true, text: r.text, words: r.words };
   } catch (e) {
     return { ok: false, error: e.message };
   }
