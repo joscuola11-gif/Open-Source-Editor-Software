@@ -3,7 +3,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -429,6 +429,146 @@ test('desktop: «Comprimi/converti» ricodifica un video qualsiasi in MP4 più l
     assert.equal(statSync(m.f('a.webm')).size, before, 'l\'originale non è stato toccato');
     assert.ok(readdirSync(outDir).every((f) => !f.endsWith('.part')), 'nessun file temporaneo');
     assert.match(await win.textContent('#tc-status'), /→/, 'mostra la dimensione prima e dopo');
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+// ---- strumenti video (ffmpeg) -------------------------------------------------------------------------------
+async function videoTool(win, file, tool) {
+  await win.setInputFiles('#file-input', file);
+  await win.waitForSelector('.media-card');
+  const card = win.locator('.media-card').first();
+  await card.hover();
+  await card.locator('.add').click();
+  await win.waitForSelector('.clip.kind-video');
+  await win.locator('.clip.kind-video').first().click();
+  const closed = win.locator('details.section:not([open])', { has: win.locator('summary', { hasText: 'Strumenti video' }) });
+  if (await closed.count()) await closed.first().locator('summary').click();
+  await win.selectOption('#sel-video-tool', tool);
+  const before = await win.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId);
+  await win.click('#btn-video-tool');
+  await win.waitForFunction((b) => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId !== b, before, { timeout: 280000 });
+  return win.evaluate(async () => {
+    const c = window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0];
+    return { clip: JSON.parse(JSON.stringify(c)), media: window.__ciak.store.project.media[c.mediaId], bytes: Array.from(new Uint8Array(await window.__ciak.pool.blob(c.mediaId).arrayBuffer())) };
+  });
+}
+const jitter = (file) => {
+  const out = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-vf', 'tblend=all_mode=difference,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-', '-f', 'null', '-'], { encoding: 'utf8' }).stdout;
+  const v = [...out.matchAll(/YAVG=([\d.]+)/g)].map((m) => Number(m[1])).slice(3);
+  return v.reduce((a, b) => a + b, 0) / Math.max(1, v.length);
+};
+
+test('desktop: «Al contrario» riproduce il video all\'indietro e la stessa parte si vede dalla fine', { skip }, async () => {
+  const dir = tmp('ciak-vt-');
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg' });
+  try {
+    const r = await videoTool(win, m.f('a.webm'), 'reverse');
+    const rev = path.join(dir, 'rev.mp4');
+    writeFileSync(rev, Buffer.from(r.bytes));
+    const info = ffprobe(rev);
+    assert.equal(info.video.codec_name, 'h264');
+    assert.ok(Math.abs(info.duration - 4) < 0.5, `durata ${info.duration}`);
+    assert.ok(info.audio, 'ha anche l\'audio');
+    // il primo fotogramma del film al contrario somiglia all'ultimo dell'originale (il testsrc2 ha un contatore: se fosse ancora dritto sarebbe diverso)
+    const first = path.join(dir, 'first.png');
+    const last = path.join(dir, 'last.png');
+    spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', rev, '-frames:v', '1', '-vf', 'scale=320:180', first]);
+    spawnSync('ffmpeg', ['-v', 'error', '-y', '-sseof', '-0.1', '-i', m.f('a.webm'), '-update', '1', '-frames:v', '1', '-vf', 'scale=320:180', last]);
+    const psnr = (a, b) => Number(/average:([\d.]+|inf)/.exec(spawnSync('ffmpeg', ['-i', a, '-i', b, '-lavfi', 'psnr', '-f', 'null', '-'], { encoding: 'utf8' }).stderr)?.[1]);
+    const orig0 = path.join(dir, 'orig0.png');
+    spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', m.f('a.webm'), '-frames:v', '1', '-vf', 'scale=320:180', orig0]);
+    const same = psnr(first, last);
+    const diff = psnr(first, orig0);
+    assert.ok(same > diff + 1.5, `il primo fotogramma al contrario somiglia all'ultimo dell'originale (PSNR ${same} contro ${diff})`);
+    // e viceversa: l'ultimo fotogramma al contrario somiglia al primo dell'originale
+    const revLast = path.join(dir, 'revlast.png');
+    spawnSync('ffmpeg', ['-v', 'error', '-y', '-sseof', '-0.1', '-i', rev, '-update', '1', '-frames:v', '1', '-vf', 'scale=320:180', revLast]);
+    assert.ok(psnr(revLast, orig0) > psnr(revLast, last) + 1.5, 'l\'ultimo fotogramma al contrario somiglia al primo dell\'originale');
+    // il clip guarda la stessa parte (in = durata − usata)
+    assert.ok(r.clip.in >= 0 && r.clip.duration > 3, `clip ${JSON.stringify({ in: r.clip.in, d: r.clip.duration })}`);
+    // si annulla
+    await win.click('#btn-undo');
+    const back = await win.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId);
+    assert.notEqual(back, r.clip.mediaId);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('desktop: «Stabilizza» riduce davvero il tremolio di una ripresa e mantiene durata e audio', { skip }, async () => {
+  const dir = tmp('ciak-vt-');
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg' });
+  try {
+    const r = await videoTool(win, m.f('shaky.webm'), 'stabilize');
+    const out = path.join(dir, 'stab.mp4');
+    writeFileSync(out, Buffer.from(r.bytes));
+    const before = jitter(m.f('shaky.webm'));
+    const after = jitter(out);
+    assert.ok(before > 1, `la ripresa tremolante ha movimento (${before.toFixed(2)})`);
+    assert.ok(after < before * 0.6, `dopo la stabilizzazione si muove molto meno (${before.toFixed(2)} → ${after.toFixed(2)})`);
+    const info = ffprobe(out);
+    assert.ok(Math.abs(info.duration - 3) < 0.5);
+    assert.ok(info.audio);
+    assert.equal(info.video.width, 640);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('desktop: ingrandisci 2×, meno disturbo, più nitido e super rallentatore producono video validi', { skip }, async () => {
+  const dir = tmp('ciak-vt-');
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg' });
+  try {
+    let r = await videoTool(win, m.f('tiny.webm'), 'upscale');
+    writeFileSync(path.join(dir, 'up.mp4'), Buffer.from(r.bytes));
+    let i = ffprobe(path.join(dir, 'up.mp4'));
+    assert.equal(i.video.width, 640);
+    assert.equal(i.video.height, 360);
+    assert.equal(r.media.width, 640, 'il progetto conosce la nuova risoluzione');
+    await win.click('#btn-undo');
+    await win.evaluate(() => window.__ciak.store.commit('prova', (p) => { for (const t of p.tracks) t.clips.length = 0; }));
+    await win.evaluate(() => { document.querySelector('.media-card .remove, .media-card [data-act="remove"]')?.click(); });
+    for (const tool of ['denoise', 'enhance']) {
+      await win.evaluate(() => window.__ciak.store.commit('prova', (p) => { for (const t of p.tracks) t.clips.length = 0; }));
+      await win.locator('.media-card').first().hover();
+      await win.locator('.media-card').first().locator('.add').click();
+      await win.waitForSelector('.clip.kind-video');
+      await win.locator('.clip.kind-video').first().click();
+      const closed = win.locator('details.section:not([open])', { has: win.locator('summary', { hasText: 'Strumenti video' }) });
+      if (await closed.count()) await closed.first().locator('summary').click();
+      await win.selectOption('#sel-video-tool', tool);
+      const before = await win.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId);
+      await win.click('#btn-video-tool');
+      await win.waitForFunction((b) => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId !== b, before, { timeout: 120000 });
+      const bytes = await win.evaluate(async () => Array.from(new Uint8Array(await window.__ciak.pool.blob(window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId).arrayBuffer())));
+      const f = path.join(dir, `${tool}.mp4`);
+      writeFileSync(f, Buffer.from(bytes));
+      i = ffprobe(f);
+      assert.equal(i.video.codec_name, 'h264', tool);
+      assert.ok(Math.abs(i.duration - 1) < 0.3, `${tool}: durata ${i.duration}`);
+      const dec = spawnSync('ffmpeg', ['-v', 'error', '-i', f, '-f', 'null', '-'], { encoding: 'utf8' });
+      assert.equal(dec.stderr.trim(), '', `${tool}: decodifica senza errori`);
+    }
+    // super rallentatore: più fotogrammi e velocità 0,25×
+    await win.evaluate(() => window.__ciak.store.commit('prova', (p) => { for (const t of p.tracks) t.clips.length = 0; }));
+    await win.locator('.media-card').first().hover();
+    await win.locator('.media-card').first().locator('.add').click();
+    await win.waitForSelector('.clip.kind-video');
+    await win.locator('.clip.kind-video').first().click();
+    const closed = win.locator('details.section:not([open])', { has: win.locator('summary', { hasText: 'Strumenti video' }) });
+    if (await closed.count()) await closed.first().locator('summary').click();
+    await win.selectOption('#sel-video-tool', 'slowmo');
+    const before = await win.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId);
+    await win.click('#btn-video-tool');
+    await win.waitForFunction((b) => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].mediaId !== b, before, { timeout: 250000 });
+    const c = await win.evaluate(() => JSON.parse(JSON.stringify(window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0])));
+    assert.equal(c.speed, 0.25, 'velocità 0,25×');
+    assert.ok(c.duration > 3.5 && c.duration < 4.6, `il clip dura circa 4 s (${c.duration})`);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

@@ -36,6 +36,12 @@ export function makeMedia() {
     run(['-f', 'lavfi', '-i', 'sine=frequency=1000:duration=8', '-af', "volume='if(lt(mod(t,0.5),0.04),1,0)':eval=frame", f('beat.wav')]);
   if (!existsSync(f('noisy.wav')))
     run(['-f', 'lavfi', '-i', 'sine=frequency=300:duration=4', '-f', 'lavfi', '-i', 'anoisesrc=d=4:a=0.08:c=white', '-filter_complex', "[0:a]volume='if(between(t,1,3),4,0)':eval=frame[s];[s][1:a]amix=inputs=2:normalize=0:duration=first", '-ar', '44100', f('noisy.wav')]);
+  // video «tremolante»: griglia fissa vista attraverso un riquadro che oscilla; e un clip brevissimo per gli strumenti lenti
+  if (!existsSync(f('tex.png'))) run(['-f', 'lavfi', '-i', 'nullsrc=s=900x600,geq=random(1)*255:128:128', '-frames:v', '1', '-vf', 'gblur=sigma=2.5,eq=contrast=2.2', f('tex.png')]);
+  if (!existsSync(f('shaky.webm')))
+    run(['-framerate', '30', '-loop', '1', '-i', f('tex.png'), '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-t', '3', '-vf', "crop=640:360:'130+40*sin(2*PI*t*2)':'110+30*cos(2*PI*t*3)'", ...vp8, '-c:a', 'libopus', '-shortest', f('shaky.webm')]);
+  if (!existsSync(f('tiny.webm')))
+    run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15:duration=1', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=1', ...vp8, '-c:a', 'libopus', '-shortest', f('tiny.webm')]);
   if (!existsSync(f('tone.wav'))) run(['-f', 'lavfi', '-i', 'sine=frequency=660:duration=3', f('tone.wav')]);
   if (!existsSync(f('photo.png'))) run(['-f', 'lavfi', '-i', 'testsrc=size=800x600', '-frames:v', '1', f('photo.png')]);
   if (!existsSync(f('subs.srt')))
