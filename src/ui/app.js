@@ -11,6 +11,7 @@ import {
 import { removeKeyframeAt, toggleKeyframe, valueAt, setValueAt } from '../core/keyframes.js';
 import { ASPECTS, EFFECTS, EXPORT_SIZES, TEXT_PRESETS } from '../core/presets.js';
 import { formatSrt, parseSrt } from '../core/srt.js';
+import { defaultGrade, encodeLut, parseCube } from '../core/grade.js';
 import { unzipStore, zipStore } from '../core/zip.js';
 import { AudioEngine } from '../engine/audio-engine.js';
 import { MediaPool } from '../engine/media-pool.js';
@@ -738,12 +739,34 @@ export class App {
         });
         if (!app.selection.size) app.selection.set(ids);
       },
+      /** Importa una LUT 3D (.cube) nel progetto e la applica al clip selezionato. */
+      async importLut(file) {
+        const id = app.inspector.clipId;
+        if (!id) return;
+        if (file.size > 20 * 1024 * 1024) return toast('Il file è troppo grande per essere una LUT.', { type: 'warn' });
+        let lut;
+        try {
+          lut = parseCube(await file.text());
+        } catch (e) {
+          return toast(`LUT non valida: ${e.message}`, { type: 'warn' });
+        }
+        const lid = uid('lut');
+        const r = app.commit('Importa LUT', (d) => {
+          d.luts ??= {};
+          d.luts[lid] = encodeLut(lut);
+          const c = findClip(d, id)?.clip;
+          if (!c) throw new EditError('Clip non trovato');
+          c.grade.lut = { id: lid, intensity: 100 };
+        });
+        if (r.ok) toast(`LUT «${lut.name}» applicata.`, { type: 'success' });
+      },
       resetAdjust() {
         const id = app.inspector.clipId;
         if (!id) return;
         app.commit('Azzera regolazioni', (d) => {
           const c = findClip(d, id).clip;
           c.adjust = createClip('image').adjust;
+          c.grade = defaultGrade();
           c.filter = { id: 'none', intensity: 1 };
         });
       },

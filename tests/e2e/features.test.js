@@ -304,7 +304,13 @@ test('estrai audio e fotogramma fisso dal menu contestuale', async () => {
     near(cs[2].start, cs[1].start + 2, 1e-6);
     // il fermo immagine si vede sul canvas
     await seek(page, cs[1].start + 0.5);
-    assert.ok(lum(await pixel(page, 0.5, 0.5)) > 10);
+    // il fermo immagine è un file appena creato: la sua decodifica può richiedere un attimo, quindi si riprova
+    let bright = 0;
+    for (let i = 0; i < 20 && bright <= 10; i++) {
+      bright = lum(await pixel(page, 0.5, 0.5));
+      if (bright <= 10) await page.waitForTimeout(150);
+    }
+    assert.ok(bright > 10, `il fermo immagine si vede (luminosità ${bright})`);
   });
 });
 

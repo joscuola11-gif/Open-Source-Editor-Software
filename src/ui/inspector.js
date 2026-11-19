@@ -11,6 +11,7 @@ import { ASPECTS, BLEND_MODES, EFFECTS, FILTERS, FONTS, FPS_OPTIONS, MASKS, SHAP
 import { ANIMATIONS, ENTER_EXIT_IDS, TRANSITION_IDS } from '../core/animations.js';
 import { EASING_LABELS, KEYFRAME_PROPS, removeKeyframeAt, setValueAt, valueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
+import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
 
 const TABS = {
   video: [['video', 'Video'], ['audio', 'Audio'], ['speed', 'Velocità'], ['anim', 'Animazione'], ['adjust', 'Regolazione'], ['fx', 'Effetti']],
@@ -27,6 +28,7 @@ const PROP_UNIT = { x: 100, y: 100, scale: 100, rotation: 1, opacity: 100, volum
 
 export class Inspector {
   #controls = [];
+  #hslBand = 'red';
   #key = '';
   #tab = {};
   #lastSync = 0;
@@ -419,6 +421,7 @@ export class Inspector {
         h('div', { class: 'btn-row' }, actionButton({ label: 'Azzera regolazioni', icon: 'rotate', onClick: () => this.app.actions.resetAdjust() })),
       ]),
     ];
+    out.push(...this.#gradeSections());
     if (clip.kind === 'video' || clip.kind === 'image') {
       out.push(section('Schermo verde (chroma key)', [
         this.#add(toggleControl(this.ctx, { label: 'Attiva', get: (c) => c.chroma.enabled, set: (c, v) => { c.chroma.enabled = v; }, history: 'Chroma key' })),
@@ -428,6 +431,67 @@ export class Inspector {
       ], { open: clip.chroma.enabled }));
     }
     return out;
+  }
+
+  /** Correzione colore avanzata: tono, curva, ruote colore, HSL per tinta e LUT. */
+  #gradeSections() {
+    const G = (label, key, min, max, def = 0) => this.S({ label, min, max, step: 1, unit: '', get: (c) => c.grade[key], set: (c, v) => { c.grade[key] = v; }, def, history: `Colore ${label}` });
+    const curveLabels = ['Neri', 'Ombre', 'Toni medi', 'Luci', 'Bianchi'];
+    const wheelRows = WHEELS.flatMap((w) => [
+      this.S({ label: `${w.label}: tinta`, min: 0, max: 360, step: 1, unit: '°', get: (c) => c.grade.wheels[w.id].hue, set: (c, v) => { c.grade.wheels[w.id].hue = v; }, def: 0, history: `Ruota ${w.label}` }),
+      this.S({ label: `${w.label}: intensità`, min: 0, max: 100, step: 1, unit: '%', get: (c) => c.grade.wheels[w.id].amount, set: (c, v) => { c.grade.wheels[w.id].amount = v; }, def: 0, history: `Ruota ${w.label}` }),
+    ]);
+    const bandSel = h('select', { id: 'sel-hsl-band', 'aria-label': 'Colore da regolare' }, HSL_BANDS.map((b) => h('option', { value: b.id }, b.label)));
+    bandSel.value = this.#hslBand;
+    bandSel.addEventListener('change', () => {
+      this.#hslBand = bandSel.value;
+      this.#sync();
+    });
+    const hsl = (label, key) => this.S({ label, min: -100, max: 100, step: 1, unit: '', get: (c) => c.grade.hsl[this.#hslBand][key], set: (c, v) => { c.grade.hsl[this.#hslBand][key] = v; }, def: 0, history: `HSL ${label}` });
+    const lutSel = h('select', { id: 'sel-lut', 'aria-label': 'LUT' });
+    const fillLuts = () => {
+      const luts = this.app.store.project.luts ?? {};
+      const sig = Object.entries(luts).map(([id, l]) => `${id}:${l.name}`).join('|');
+      if (lutSel.dataset.sig === sig) return;
+      lutSel.dataset.sig = sig;
+      lutSel.replaceChildren(h('option', { value: '' }, 'Nessuna'), ...Object.entries(luts).map(([id, l]) => h('option', { value: id }, l.name)));
+    };
+    lutSel.addEventListener('change', () => this.app.store.commit('LUT', (p) => {
+      const c = findClip(p, this.clipId)?.clip;
+      if (c) c.grade.lut.id = lutSel.value || null;
+    }));
+    this.#controls.push({ el: lutSel, sync: (c) => {
+      fillLuts();
+      if (c && document.activeElement !== lutSel) lutSel.value = c.grade.lut.id && lutSel.querySelector(`option[value="${c.grade.lut.id}"]`) ? c.grade.lut.id : '';
+    } });
+    const lutFile = h('input', { type: 'file', accept: '.cube,text/plain', hidden: true, id: 'lut-file', 'aria-label': 'Importa una LUT (.cube)' });
+    lutFile.addEventListener('change', async () => {
+      const f = lutFile.files?.[0];
+      lutFile.value = '';
+      if (f) await this.app.actions.importLut(f);
+    });
+    return [
+      section('Tono', [
+        G('Esposizione', 'exposure', -100, 100),
+        G('Alte luci', 'highlights', -100, 100),
+        G('Ombre', 'shadows', -100, 100),
+        G('Nitidezza', 'sharpen', 0, 100),
+      ], { open: false }),
+      section('Curva', CURVE_POINTS.map((pt, i) => this.S({ label: curveLabels[i], min: 0, max: 100, step: 1, unit: '%', get: (c) => c.grade.curve[i], set: (c, v) => { c.grade.curve[i] = v; }, def: pt, history: 'Curva' })), { open: false }),
+      section('Ruote colore', wheelRows, { open: false }),
+      section('HSL per colore', [
+        h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Colore'), bandSel),
+        hsl('Tinta', 'h'),
+        hsl('Saturazione', 's'),
+        hsl('Luminosità', 'l'),
+      ], { open: false }),
+      section('LUT (.cube)', [
+        h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'LUT'), lutSel),
+        this.S({ label: 'Intensità LUT', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.grade.lut.intensity, set: (c, v) => { c.grade.lut.intensity = v; }, def: 100, history: 'Intensità LUT' }),
+        h('div', { class: 'btn-row wrap' }, lutFile, actionButton({ label: 'Importa LUT…', icon: 'upload', onClick: () => lutFile.click() })),
+        h('p', { class: 'hint' }, 'Una LUT è un «look» pronto dei colorist (file .cube 3D). Quelle più grandi di 33 punti vengono ridotte.'),
+      ], { open: false }),
+    ];
   }
 
   // ---------------------------------------------------------------------------

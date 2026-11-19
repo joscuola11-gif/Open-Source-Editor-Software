@@ -9,6 +9,7 @@
 
 import { clamp, isNum, mergeDeep, uid } from './util.js';
 import { MAX_SPEED, MIN_SPEED } from './presets.js';
+import { defaultGrade, sanitizeGrade, sanitizeLuts } from './grade.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -41,6 +42,7 @@ export function createProject({ name = 'Nuovo progetto', width = 1920, height = 
     media: {},
     tracks: [v2, v1, a1],
     markers: [],
+    luts: {},
   };
 }
 
@@ -89,6 +91,7 @@ export function createClip(kind, props = {}) {
     mask: { shape: 'none', size: 0.6, roundness: 0.25, invert: false },
     adjust: { brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0, vignette: 0, temperature: 0, tint: 0, grain: 0 },
     filter: { id: 'none', intensity: 1 },
+    grade: defaultGrade(),
     effects: [],
     chroma: { enabled: false, color: '#00ff00', similarity: 0.4, smoothness: 0.1 },
     keyframes: {},
@@ -186,6 +189,7 @@ export function sanitizeClip(raw, p) {
     if (clean.length) clip.keyframes[prop] = clean;
     else delete clip.keyframes[prop];
   }
+  clip.grade = sanitizeGrade(raw.grade);
   if (!Array.isArray(clip.effects)) clip.effects = [];
   clip.effects = clip.effects.filter((e) => e && typeof e.type === 'string').map((e) => ({ id: e.id ?? uid('e'), type: e.type, amount: num(e.amount, 50, 0, 100) }));
   return clip;
@@ -200,6 +204,7 @@ export function sanitizeProject(raw) {
     media: {},
     tracks: [],
     markers: [],
+    luts: sanitizeLuts(raw?.luts),
   };
   const s = raw?.settings ?? {};
   p.settings.width = Math.round(num(s.width, 1920, 16, 8192));

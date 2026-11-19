@@ -15,6 +15,7 @@ import { valueAt } from '../core/keyframes.js';
 import { clipAnimationState } from '../core/animations.js';
 import { BLEND_MODES, FILTERS } from '../core/presets.js';
 import { isActiveAt } from '../core/timeline.js';
+import { applyGrade, decodeLut, gradeIsIdentity } from '../core/grade.js';
 import { IDENTITY_PARAMS, applyFilterParams, chromaKey, fillNoise, filterCss, glitchSlices, isIdentityParams, rgbSplit } from './pixel-fx.js';
 
 const BLEND_OP = Object.fromEntries(BLEND_MODES.map((b) => [b.id, b.op]));
@@ -124,6 +125,8 @@ export class Renderer {
   #lookKeys = new Map(); // clipId → chiave dell'ultimo fotogramma (per rilevare i parametri stabili)
   #looks = new Map(); // clipId → {key, canvas}: aspetto statico già elaborato (LRU)
   #glow = null;
+  #luts = {};
+  #lutCache = new Map();
   lookHits = 0; // contatori per test/diagnostica
   lookBuilds = 0;
   supportsFilter;
@@ -154,7 +157,19 @@ export class Renderer {
     return bad;
   }
 
+  /** LUT del progetto, decodificate una sola volta (la chiave è il testo salvato: cambia solo se cambia la LUT). */
+  #lutFor(id) {
+    const entry = this.#luts?.[id];
+    if (!entry) return null;
+    const cached = this.#lutCache.get(id);
+    if (cached?.src === entry.data) return cached.lut;
+    const lut = decodeLut(entry);
+    this.#lutCache.set(id, { src: entry.data, lut });
+    return lut;
+  }
+
   render(ctx, p, t) {
+    this.#luts = p.luts ?? {};
     const W = ctx.canvas.width;
     const H = ctx.canvas.height;
     ctx.save();
@@ -328,17 +343,18 @@ export class Renderer {
     const pixelFx = bitmap ? clip.effects.filter((f) => ['pixelate', 'rgb-split', 'glitch', 'mirror', 'vhs'].includes(f.type)) : [];
     const chroma = bitmap && clip.chroma.enabled ? clip.chroma : null;
     const overlays = this.#overlaysFor(clip, t, fps);
+    const gradeOn = !!bitmap && !gradeIsIdentity(clip.grade);
     const glow = clip.effects.find((f) => f.type === 'glow');
     const needLayer = overlays.length > 0 || (!!procedural && opacity < 0.999 && clip.kind !== 'sticker') || !!glow;
 
     // --- contenuto pronto (eventuale fase pixel) ----------------------------------
     let drawImage = null; // (c, dx, dy, dw, dh) disegna il bitmap (già elaborato) nel riquadro
     if (bitmap) {
-      if (chroma || pixelFx.length || needSoftFilter) {
+      if (chroma || pixelFx.length || needSoftFilter || gradeOn) {
         // la fase pixel è pigra: se la cache dell'aspetto statico è valida non viene mai eseguita
         let staged = null;
         drawImage = (c, dx, dy, dw, dh) => {
-          staged ??= this.#pixelStage(bitmap, box, scale, clip, chroma, pixelFx, needSoftFilter ? fp : null, t, fps, frame);
+          staged ??= this.#pixelStage(bitmap, box, scale, clip, chroma, pixelFx, needSoftFilter ? fp : null, t, fps, frame, gradeOn ? clip.grade : null);
           c.drawImage(staged.canvas, 0, 0, staged.w, staged.h, dx, dy, dw, dh);
         };
       } else drawImage = (c, dx, dy, dw, dh) => c.drawImage(bitmap.img, bitmap.sx, bitmap.sy, bitmap.cw, bitmap.ch, dx, dy, dw, dh);
@@ -347,10 +363,10 @@ export class Renderer {
     // Cache dell'aspetto statico (solo immagini): filtro/effetti/chroma sono costosi e il risultato non
     // cambia da un fotogramma all'altro. Si attiva quando i parametri restano identici per 2 fotogrammi.
     let cssNow = css;
-    if (bitmap && clip.kind === 'image' && (css || chroma || needSoftFilter || pixelFx.length) && !pixelFx.some((f) => f.type === 'glitch' || f.type === 'vhs')) {
+    if (bitmap && clip.kind === 'image' && (css || chroma || needSoftFilter || pixelFx.length || gradeOn) && !pixelFx.some((f) => f.type === 'glitch' || f.type === 'vhs')) {
       const cw = Math.min(2048, Math.max(2, Math.round(box.w * scale)));
       const ch = Math.min(2048, Math.max(2, Math.round((cw * box.h) / box.w)));
-      const key = [clip.mediaId, cw, ch, css, clip.crop.l, clip.crop.t, clip.crop.r, clip.crop.b, chroma ? `${chroma.color}${chroma.similarity}${chroma.smoothness}` : '', pixelFx.map((f) => `${f.type}${f.amount}`).join(','), needSoftFilter ? JSON.stringify(fp) : ''].join('|');
+      const key = [clip.mediaId, cw, ch, css, clip.crop.l, clip.crop.t, clip.crop.r, clip.crop.b, chroma ? `${chroma.color}${chroma.similarity}${chroma.smoothness}` : '', pixelFx.map((f) => `${f.type}${f.amount}`).join(','), needSoftFilter ? JSON.stringify(fp) : '', gradeOn ? `${JSON.stringify(clip.grade)}${this.#luts?.[clip.grade.lut.id]?.data?.length ?? ''}` : ''].join('|');
       const stable = this.#lookKeys.get(clip.id) === key;
       this.#lookKeys.set(clip.id, key);
       if (stable) {
@@ -581,7 +597,7 @@ export class Renderer {
     return s;
   }
 
-  #pixelStage(bitmap, box, scale, clip, chroma, fxList, softFilter, t, fps, frame) {
+  #pixelStage(bitmap, box, scale, clip, chroma, fxList, softFilter, t, fps, frame, grade = null) {
     const long = Math.max(box.w, box.h) * scale;
     const k = Math.min(1, PIXEL_CAP / Math.max(1, long), bitmap.cw / Math.max(1, box.w * scale));
     const pw = Math.max(8, Math.round(box.w * scale * Math.min(1, k) || 8));
@@ -611,6 +627,11 @@ export class Renderer {
         a.putImageData(id, 0, 0);
       }
       if (softFilter.blur > 0.5) this.#softBlur(A, B, pw, ph, softFilter.blur * (pw / Math.max(1, box.w * scale)));
+    }
+    if (grade) {
+      const id = a.getImageData(0, 0, pw, ph);
+      applyGrade(id.data, pw, ph, grade, grade.lut.id ? this.#lutFor(grade.lut.id) : null);
+      a.putImageData(id, 0, 0);
     }
     return { canvas: A.canvas, w: pw, h: ph };
   }
