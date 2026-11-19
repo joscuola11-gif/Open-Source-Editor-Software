@@ -2360,3 +2360,34 @@ input[type='range'] {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- ritaglio con le maniglie ---------- */
+.crop-handle {
+  display: none;
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+}
+.sel-box.cropping {
+  outline: 2px dashed var(--accent);
+}
+.sel-box.cropping .crop-handle {
+  display: block;
+}
+.sel-box.cropping .sel-handle,
+.sel-box.cropping .rot-stem {
+  display: none;
+}
+.crop-handle.tl { left: -8px; top: -8px; cursor: nwse-resize; }
+.crop-handle.tr { right: -8px; top: -8px; cursor: nesw-resize; }
+.crop-handle.bl { left: -8px; bottom: -8px; cursor: nesw-resize; }
+.crop-handle.br { right: -8px; bottom: -8px; cursor: nwse-resize; }
+.crop-handle.t { left: calc(50% - 14px); top: -7px; width: 28px; height: 12px; cursor: ns-resize; }
+.crop-handle.b { left: calc(50% - 14px); bottom: -7px; width: 28px; height: 12px; cursor: ns-resize; }
+.crop-handle.l { top: calc(50% - 14px); left: -7px; width: 12px; height: 28px; cursor: ew-resize; }
+.crop-handle.r { top: calc(50% - 14px); right: -7px; width: 12px; height: 28px; cursor: ew-resize; }

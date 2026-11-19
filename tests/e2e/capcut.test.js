@@ -1311,3 +1311,69 @@ test('maschera: i keyframe di posizione la fanno scorrere nel tempo e il pannell
     await page.waitForFunction(() => !document.querySelector('[data-kf="maskX"]'), null, { timeout: 5000 });
   });
 });
+
+// ---------------------------------------------------------------- ritaglio con le maniglie
+test('ritaglio: le maniglie sul video tolgono davvero i bordi, i formati ritagliano al centro, si annulla', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await seek(page, 1);
+    assert.ok(isRed(await pixel(page, 0.1, 0.5)), 'prima: a sinistra c’è il video');
+    await page.click('#btn-crop-mode');
+    await page.waitForSelector('.sel-box.cropping .crop-handle.l', { state: 'visible' });
+    const box = await page.locator('.sel-box').boundingBox();
+    const hl = await page.locator('.crop-handle.l').boundingBox();
+    const stage = await page.locator('.preview-canvas').boundingBox();
+    // trascina il bordo sinistro verso destra di un quarto della larghezza del video
+    await page.mouse.move(hl.x + hl.width / 2, hl.y + hl.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(hl.x + hl.width / 2 + box.width * 0.25, hl.y + hl.height / 2, { steps: 8 });
+    await page.mouse.up();
+    const c = (await clips(page))[0].crop;
+    near(c.l, 0.25, 0.03, 'ritaglio a sinistra');
+    near(c.r + c.t + c.b, 0, 1e-9, 'gli altri lati non cambiano');
+    await seek(page, 1);
+    assert.ok(isBlack(await pixel(page, 0.1, 0.5)), 'a sinistra ora è vuoto');
+    assert.ok(isRed(await pixel(page, 0.6, 0.5)), 'il resto resta');
+    void stage;
+    // angolo + rapporto 1:1 con le maniglie: il video diventa quadrato
+    await page.click('[data-crop-aspect="1:1"]');
+    const sq = (await clips(page))[0].crop;
+    const media = await page.evaluate(() => Object.values(window.__ciak.store.project.media)[0]);
+    near(((1 - sq.l - sq.r) * media.width) / ((1 - sq.t - sq.b) * media.height), 1, 1e-6, 'rapporto 1:1');
+    near(sq.l, sq.r, 1e-9, 'centrato');
+    await page.click('[data-crop-aspect="9:16"]');
+    const v = (await clips(page))[0].crop;
+    near(((1 - v.l - v.r) * media.width) / ((1 - v.t - v.b) * media.height), 9 / 16, 1e-6);
+    // azzera e annulla
+    await page.locator('details.section', { hasText: 'Ritaglio' }).getByRole('button', { name: 'Azzera' }).click();
+    assert.deepEqual((await clips(page))[0].crop, { l: 0, t: 0, r: 0, b: 0 });
+    await page.click('#btn-undo');
+    near((await clips(page))[0].crop.l, v.l, 1e-9, 'l’annulla riporta 9:16');
+    // spegni le maniglie: niente più ritaglio col trascinamento
+    await page.click('#btn-crop-mode');
+    await page.waitForFunction(() => !document.querySelector('.sel-box.cropping'));
+  });
+});
+
+test('ritaglio: con un angolo e il rapporto fisso la forma resta quella scelta', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await page.click('#btn-crop-mode');
+    await page.click('[data-crop-aspect="16:9"]'); // già 16:9: nessun ritaglio, ma il rapporto resta fisso
+    await page.waitForSelector('.crop-handle.br', { state: 'visible' });
+    const hb = await page.locator('.crop-handle.br').boundingBox();
+    const box = await page.locator('.sel-box').boundingBox();
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(hb.x + hb.width / 2 - box.width * 0.3, hb.y + hb.height / 2 - box.height * 0.1, { steps: 8 });
+    await page.mouse.up();
+    const crop = (await clips(page))[0].crop;
+    const media = await page.evaluate(() => Object.values(window.__ciak.store.project.media)[0]);
+    assert.ok(crop.r > 0.2, `tolto a destra (${crop.r})`);
+    near(((1 - crop.l - crop.r) * media.width) / ((1 - crop.t - crop.b) * media.height), 16 / 9, 0.01, 'rapporto 16:9 mantenuto');
+  });
+});

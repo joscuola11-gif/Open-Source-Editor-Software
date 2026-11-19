@@ -30,6 +30,7 @@ import { saveCurrentAsTemplate } from './templates-panel.js';
 import { layoutClips } from '../core/layouts.js';
 import { applyCameraMove, clearCameraMove } from '../core/camera.js';
 import { applySpeedRamp } from '../core/timeline.js';
+import { cropForAspect, CROP_ASPECTS } from '../core/crop.js';
 import { applyTemplate, parseTemplateFile, serializeTemplate, templateFromProject } from '../core/templates.js';
 import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
@@ -1001,6 +1002,26 @@ export class App {
         if (!ids.length) return toast('Seleziona prima i clip da disporre (Ctrl o Maiusc + clic per più clip)', { type: 'warn' });
         const r = app.commit('Disposizione', (d) => layoutClips(d, ids, layoutId, { fill }));
         if (r.ok) app.player.settle?.();
+      },
+      /** Accende o spegne le maniglie di ritaglio sul video selezionato. */
+      toggleCropMode() {
+        app.preview.setCropMode(!app.preview.cropMode);
+        app.inspector.refresh?.();
+      },
+      /** Ritaglio centrato con un rapporto (1:1, 16:9…), «free» = libero, «reset» = nessun ritaglio. */
+      cropAspect(id) {
+        if (id === 'free') {
+          app.preview.setCropMode(app.preview.cropMode, null);
+          return app.inspector.refresh?.();
+        }
+        const cid = app.inspector.clipId ?? app.selection.primary;
+        const f = cid && findClip(app.store.project, cid);
+        if (!f || !(f.clip.kind === 'video' || f.clip.kind === 'image')) return toast('Seleziona un video o una foto', { type: 'warn' });
+        const media = app.store.project.media[f.clip.mediaId];
+        const a = CROP_ASPECTS.find((x) => x.id === id);
+        const crop = id === 'reset' ? { l: 0, t: 0, r: 0, b: 0 } : cropForAspect(media?.width || 16, media?.height || 9, a.ratio);
+        app.commit(id === 'reset' ? 'Azzera ritaglio' : `Ritaglio ${id}`, (d) => { findClip(d, cid).clip.crop = crop; });
+        app.preview.setCropMode(app.preview.cropMode || id !== 'reset', id === 'reset' ? null : a.ratio);
       },
       /** Curva di velocità sul clip video selezionato: lo divide in pezzi a velocità costante. */
       applySpeedRamp(points, { keepAudio = false } = {}) {

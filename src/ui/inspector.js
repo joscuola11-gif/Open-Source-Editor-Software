@@ -15,6 +15,7 @@ import { LAYOUTS } from '../core/layouts.js';
 import { CAMERA_MOVES } from '../core/camera.js';
 import { speedCurveEditor } from './speed-curve.js';
 import { curveEditor } from './curve-editor.js';
+import { CROP_ASPECTS } from '../core/crop.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
 import { KARAOKE_MODES } from '../core/karaoke.js';
 import { SILENCE_DEFAULTS, findSilences, timelineRanges } from '../core/silence.js';
@@ -316,8 +317,10 @@ export class Inspector {
       this.#add(selectControl(this.ctx, { label: 'Metodo', options: BLEND_MODES, get: (c) => c.blend, set: (c, v) => { c.blend = v; }, history: 'Metodo di fusione' })),
     ], { open: clip.kind === 'adjustment' ? false : true }));
     if (clip.kind === 'video' || clip.kind === 'image') {
-      out.push(section('Ritaglio', ['l', 't', 'r', 'b'].map((side, i) =>
-        this.S({ label: ['Sinistra', 'Alto', 'Destra', 'Basso'][i], min: 0, max: 90, step: 1, unit: '%', get: (c) => c.crop[side] * 100, set: (c, v) => { c.crop[side] = Math.min(0.95 - (side === 'l' ? c.crop.r : side === 'r' ? c.crop.l : side === 't' ? c.crop.b : c.crop.t), v / 100); }, def: 0, history: 'Ritaglio' })), { open: false }));
+      const cropBtn = h('button', { class: 'btn small', type: 'button', id: 'btn-crop-mode', 'aria-pressed': String(this.app.preview.cropMode), title: 'Mostra le maniglie sul video per ritagliarlo trascinando', onClick: () => this.app.actions.toggleCropMode() }, icon('crop', 14), this.app.preview.cropMode ? 'Ritaglio con maniglie: acceso' : 'Ritaglia con le maniglie');
+      const aspectChips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Rapporto del ritaglio' }, CROP_ASPECTS.map((a) => h('button', { class: `chip${(this.app.preview.cropRatio ?? null) === a.ratio ? ' on' : ''}`, type: 'button', 'data-crop-aspect': a.id, onClick: () => this.app.actions.cropAspect(a.id) }, a.label)));
+      out.push(section('Ritaglio', [h('div', { class: 'btn-row wrap' }, cropBtn, actionButton({ label: 'Azzera', icon: 'rotate', onClick: () => this.app.actions.cropAspect('reset') })), aspectChips, ...['l', 't', 'r', 'b'].map((side, i) =>
+        this.S({ label: ['Sinistra', 'Alto', 'Destra', 'Basso'][i], min: 0, max: 90, step: 1, unit: '%', get: (c) => c.crop[side] * 100, set: (c, v) => { c.crop[side] = Math.min(0.95 - (side === 'l' ? c.crop.r : side === 'r' ? c.crop.l : side === 't' ? c.crop.b : c.crop.t), v / 100); }, def: 0, history: 'Ritaglio' }))], { open: true }));
     }
     if (clip.kind === 'video' || clip.kind === 'image') {
       out.push(section('Sfondo dietro il clip', [

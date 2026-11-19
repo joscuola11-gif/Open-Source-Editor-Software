@@ -7,6 +7,7 @@ import { clamp, formatTimecode } from '../core/util.js';
 import { findClip, isActiveAt } from '../core/timeline.js';
 import { valueAt, setValueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
+import { dragCrop, edgeForFlip } from '../core/crop.js';
 
 const QUALITIES = [
   { id: '640', label: 'Bassa (640)', px: 640 },
@@ -23,6 +24,10 @@ const rotate = (x, y, deg) => {
 export class PreviewView {
   #hud = false;
   #handlesDirty = false;
+  /** Modalità «Ritaglia»: sul clip selezionato compaiono le maniglie dei bordi. */
+  cropMode = false;
+  /** Rapporto fisso per gli angoli (null = libero). */
+  cropRatio = null;
 
   constructor(app) {
     this.app = app;
@@ -36,6 +41,7 @@ export class PreviewView {
       ...['nw', 'ne', 'sw', 'se'].map((c) => h('div', { class: `sel-handle ${c}`, 'data-handle': 'scale', title: 'Ridimensiona' })),
       h('div', { class: 'rot-stem' }),
       h('div', { class: 'sel-handle rot', 'data-handle': 'rotate', title: 'Ruota (Maiusc = passi di 15°)' }),
+      ...['tl', 't', 'tr', 'l', 'r', 'bl', 'b', 'br'].map((c) => h('div', { class: `crop-handle ${c}`, 'data-crop': c, title: 'Trascina per ritagliare' })),
     );
     this.hud = h('div', { class: 'hud', hidden: true });
     this.box = h('div', { class: 'stage-box' }, this.canvas, this.guides, this.centerV, this.centerH, this.selBox, this.hud);
@@ -200,6 +206,7 @@ export class PreviewView {
     }
     const k = this.#k;
     this.selBox.hidden = false;
+    this.selBox.classList.toggle('cropping', this.cropMode && (clip.kind === 'video' || clip.kind === 'image'));
     this.selBox.style.width = `${g.w * k}px`;
     this.selBox.style.height = `${g.h * k}px`;
     this.selBox.style.transform = `translate(${g.cx * k}px, ${g.cy * k}px) translate(-50%, -50%) rotate(${g.rotation}deg)`;
@@ -240,11 +247,64 @@ export class PreviewView {
   #onHandleDown(e) {
     if (e.button !== 0) return;
     const hnd = e.target.closest('.sel-handle');
+    const crop = e.target.closest('.crop-handle');
     const clip = this.#selectedClip();
     if (!clip) return;
     e.preventDefault();
     e.stopPropagation();
+    if (crop && this.cropMode) return this.#startCrop(e, clip, crop.dataset.crop);
     this.#startTransform(e, clip, hnd ? hnd.dataset.handle : 'move');
+  }
+
+  setCropMode(on, ratio = this.cropRatio) {
+    this.cropMode = !!on;
+    this.cropRatio = ratio;
+    this.#queueHandles();
+    this.app.events.emit('crop-mode');
+  }
+
+  /** Trascinamento di un bordo o angolo del ritaglio. */
+  #startCrop(e, clip, handle) {
+    const { store } = this.app;
+    const id = clip.id;
+    const media = store.project.media[clip.mediaId];
+    const g0 = this.#geometry(clip);
+    if (!g0 || !media) return;
+    const crop0 = { ...clip.crop };
+    const fullW = g0.w / Math.max(0.05, 1 - crop0.l - crop0.r);
+    const fullH = g0.h / Math.max(0.05, 1 - crop0.t - crop0.b);
+    const { flipX, flipY } = clip.transform;
+    const edge = edgeForFlip(handle, flipX, flipY);
+    const k = this.#k;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let began = false;
+    const apply = (ev) => {
+      const dxPx = (ev.clientX - startX) / k;
+      const dyPx = (ev.clientY - startY) / k;
+      if (!began) {
+        if (Math.hypot(dxPx, dyPx) < 2) return;
+        began = true;
+        store.beginGesture('Ritaglia');
+      }
+      let [lx, ly] = rotate(dxPx, dyPx, -g0.rotation);
+      if (flipX) lx = -lx;
+      if (flipY) ly = -ly;
+      const next = dragCrop(crop0, edge, lx / fullW, ly / fullH, { ratio: this.cropRatio, mw: media.width || 16, mh: media.height || 9 });
+      store.previewGesture((p) => {
+        const c = findClip(p, id)?.clip;
+        if (c) c.crop = next;
+      });
+    };
+    const up = () => {
+      removeEventListener('pointermove', apply);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      if (began) store.commitGesture();
+    };
+    addEventListener('pointermove', apply);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
   }
 
   #onDblClick(e) {
