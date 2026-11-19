@@ -46,6 +46,14 @@ Riferimento: `docs/capcut-catalogo-funzioni.txt` (numeri delle voci). Aggiornato
 | 095-097 | Curva di velocità (speed ramp): 7 curve pronte e editor grafico con punti trascinabili; il clip diventa una fila di pezzi a velocità costante, keyframe ricollocati | `core/speedramp.js`, `core/timeline.js` · fuzz |
 | 080-081 | Curve di Bézier per i keyframe: 2 maniglie, 7 curve pronte (anche con rimbalzo/superamento) | `core/keyframes.js`, `ui/curve-editor.js` |
 | 116-121 | Maschere con posizione, rotazione, sfumatura dei bordi e keyframe (dimensione, posizione, sfumatura) | `engine/renderer.js` |
+| 159, 160 | Colore automatico: correzione automatica (livelli, bilanciamento del bianco, saturazione) e «uniforma ai colori di un altro clip»; si misura sui pixel | `core/autocolor.js`, `engine/frame-sampler.js` |
+| 147, 269, 315, 428 | Look cartone/anime (cel shading), matita, poster, due colori, retino, vecchio schermo, onda, vortice, lenti, sfocatura a zoom: filtri sui pixel (non è un modello generativo) | `engine/pixel-fx.js` |
+| 124, 140, 145 | Sovrapposizioni procedurali: neve, pioggia, coriandoli, scintille, bokeh, polvere, cuori, perdita di luce | `core/particles.js` |
+| 193-195, 205 | **Sottotitoli automatici dal parlato**: rilevamento della voce, riconoscimento con Whisper (nel programma per computer in locale con onnxruntime; nel browser in WebAssembly), lingua a scelta (13), modello Veloce/Buona/Migliore, correzione del testo prima dell'inserimento, esportazione SRT | `core/vad.js`, `core/transcribe.js`, `engine/asr-engines.js`, `ui/captions-dialog.js`, `desktop/asr.cjs` |
+| 197 | I tempi non si fidano di quelli del modello: si riallineano ogni parola con sillabe contate nell'audio e punti di minimo di energia | `core/wordtimes.js`, `core/align.js` · prove su voce vera (jfk.wav) e sintetica con tempi noti |
+| 198-203 | Sottotitoli a lunghezza adatta (film, social 9:16, una riga, poche parole), a capo bilanciati, durate leggibili, nessuna sovrapposizione, karaoke parola per parola con i tempi veri | `core/captions.js` |
+| 207 | Toglie le esitazioni («ehm», «uhm») dai sottotitoli | `core/captions.js` |
+| 195 | «Ho già il testo»: il copione si mette a tempo con la voce senza riconoscimento (zero errori di trascrizione); «Solo i tempi»: righe vuote già a tempo da riempire | `core/align.js`, `core/transcribe.js` |
 
 ## Già presenti prima (verificate nel codice)
 Ribalta orizzontale e verticale (64-65), ritaglio con cursori (61), colore dello sfondo del canvas, estrai audio (218-219),
@@ -54,3 +62,13 @@ con contorno/ombra/sfondo/allineamento/spaziatura (171-182), animazioni di ingre
 
 ## Non fattibile (servizi esterni, account, licenze, app mobili)
 Vedi il README, sezione «Catalogo CapCut».
+
+## Limiti dichiarati dei sottotitoli automatici
+- **Non provato su un vero Windows/macOS**: il motore Whisper è provato con il modello vero (Whisper tiny, voce umana vera) su Linux, in Node,
+  nel browser (WebAssembly) e dentro il pacchetto Electron per Linux. Il pacchetto Windows contiene i file giusti (verificato nel contenuto),
+  ma non l'ho potuto avviare su Windows. Serve «Microsoft Visual C++ Redistributable 2015-2022 (x64)» (gratuito, di solito già presente):
+  non lo includo perché la licenza di Microsoft lo permette solo a chi ha Visual Studio.
+- I modelli si scaricano da huggingface.co la prima volta (licenze Apache 2.0 e MIT): in questo ambiente il sito è bloccato, perciò
+  «Buona» e «Migliore» non sono stati provati; la logica è la stessa del modello provato.
+- Il riconoscimento non distingue i parlanti (voce 208) e non riconosce da solo la lingua: va scelta.
+- I tempi delle parole sono ottimi sulle frasi chiare, meno sul parlato sovrapposto a musica forte.
