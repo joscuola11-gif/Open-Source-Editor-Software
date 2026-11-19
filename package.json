@@ -26,7 +26,8 @@
     "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0",
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "sts-whisper-tiny": "^1.0.0"
   },
   "main": "desktop/main.cjs",
   "author": "Ciak Studio contributors",
