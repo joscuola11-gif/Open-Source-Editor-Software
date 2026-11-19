@@ -1,7 +1,7 @@
 // Funzioni aggiunte dal catalogo CapCut (docs/capcut-stato.md). Ogni gruppo ha le sue prove nel browser vero.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { launch, importFiles, project, clips, pixel, seek, openTab, inspectorTab, setNum, addMedia } from '../helpers/browser.js';
+import { launch, importFiles, project, clips, pixel, seek, openTab, inspectorTab, setNum, addMedia, fakeScreenScript } from '../helpers/browser.js';
 import { makeMedia } from '../helpers/make-media.js';
 
 let env;
@@ -576,5 +576,81 @@ test('audio: normalizza il volume e trova i battiti; taglia a tempo di musica', 
     void videoStart;
     await page.click('#btn-undo');
     assert.equal((await clips(page)).filter((x) => x.kind === 'video').length, 1);
+  });
+});
+
+// ---------------------------------------------------------------- registrazione schermo / webcam
+for (const [mode, label] of [['screen', 'schermo'], ['webcam', 'webcam'], ['both', 'schermo + webcam']]) {
+  test(`registra ${label}: barra rossa con tempo, «Ferma» e la clip finisce sulla timeline`, async () => {
+    await withApp(async ({ page, context }) => {
+      await context.addInitScript(fakeScreenScript);
+      await page.reload();
+      await page.waitForFunction(() => window.__ciak && document.querySelector('.timeline'));
+      await page.click('#btn-record-screen');
+      await page.selectOption('#rec-mode', mode);
+      if (mode === 'screen') await page.uncheck('#rec-mic');
+      await page.click('[data-act="rec-go"]');
+      await page.waitForSelector('.rec-bar');
+      assert.match(await page.textContent('.rec-bar'), /Registrazione/);
+      await page.waitForFunction(() => /^0:0[2-9]$/.test(document.querySelector('#rec-time')?.textContent ?? ''), null, { timeout: 8000 });
+      assert.match(await page.textContent('#btn-record-screen'), /Ferma/, 'il pulsante in libreria diventa «Ferma»');
+      await page.click('#btn-rec-stop');
+      await page.waitForFunction(() => !document.querySelector('.rec-bar'));
+      await page.waitForFunction(() => window.__ciak.store.project.tracks.some((t) => t.clips.length), null, { timeout: 15000 });
+      const cs = await clips(page);
+      assert.ok(cs.length >= 1, 'almeno una clip');
+      const v = cs.find((c) => c.kind === 'video');
+      assert.ok(v, 'clip video');
+      assert.ok(v.duration >= 1.8 && v.duration < 12, `durata ${v.duration}`);
+      const media = await page.evaluate(() => Object.values(window.__ciak.store.project.media).map((x) => ({ name: x.name, kind: x.kind, w: x.width, h: x.height })));
+      assert.match(media[0].name, /^Registrazione /);
+      assert.equal(media[0].kind, 'video');
+      if (mode !== 'webcam') assert.ok(media[0].w >= 640, 'risoluzione dello schermo');
+      assert.match(await page.textContent('#btn-record-screen'), /Registra/);
+      // l'anteprima mostra davvero il contenuto registrato
+      if (mode === 'screen') {
+        await seek(page, 0.5);
+        const [r, g, b] = await pixel(page, 0.2, 0.2);
+        assert.ok(b > 150 && r < 120, `blu dello schermo finto, ottenuto ${[r, g, b]}`);
+      }
+    });
+  });
+}
+
+test('registrazione: se si annulla il permesso non resta nulla e compare un messaggio', async () => {
+  await withApp(async ({ page, context }) => {
+    await context.addInitScript(() => {
+      navigator.mediaDevices.getDisplayMedia = async () => {
+        throw new DOMException('negato', 'NotAllowedError');
+      };
+    });
+    await page.reload();
+    await page.waitForFunction(() => window.__ciak && document.querySelector('.timeline'));
+    await page.click('#btn-record-screen');
+    await page.selectOption('#rec-mode', 'screen');
+    await page.click('[data-act="rec-go"]');
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator('.rec-bar').count(), 0);
+    assert.equal((await clips(page)).length, 0);
+  });
+});
+
+test('registrazione: se l’utente ferma la condivisione dal browser la registrazione si chiude da sola', async () => {
+  await withApp(async ({ page, context }) => {
+    await context.addInitScript(fakeScreenScript);
+    await page.reload();
+    await page.waitForFunction(() => window.__ciak && document.querySelector('.timeline'));
+    await page.click('#btn-record-screen');
+    await page.selectOption('#rec-mode', 'screen');
+    await page.uncheck('#rec-mic');
+    await page.click('[data-act="rec-go"]');
+    await page.waitForSelector('.rec-bar');
+    await page.waitForTimeout(1800);
+    // simula «Interrompi condivisione» del browser: la traccia dello schermo termina
+    await page.evaluate(() => window.__screenTrack.dispatchEvent(new Event('ended')));
+    await page.waitForFunction(() => !document.querySelector('.rec-bar'), null, { timeout: 8000 });
+    await page.waitForFunction(() => window.__ciak.store.project.tracks.some((t) => t.clips.length), null, { timeout: 15000 });
+    const [c] = await clips(page);
+    assert.ok(c.duration >= 1.5, `la parte registrata fino a quel momento resta: ${c.duration}`);
   });
 });

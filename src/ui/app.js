@@ -24,6 +24,7 @@ import { Renderer } from '../engine/renderer.js';
 import { Player } from '../engine/player.js';
 import { Storage } from '../engine/storage.js';
 import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export.js';
+import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
 import { Exporter, QUALITY, availableFormats, downloadBlob, estimateBitrate, exportSize, FORMATS } from '../engine/exporter.js';
 import { VoiceRecorder, computePeaks, decodeAudio, kindOfFile, probeMedia, captureFrameBlob } from '../engine/media-import.js';
 import { h, isTyping } from './dom.js';
@@ -82,6 +83,7 @@ export class App {
     this.storage = new Storage();
     this.exporter = new Exporter({ store: this.store, player: this.player, audio: this.audio });
     this.voice = new VoiceRecorder();
+    this.screenRec = new ScreenRecorder();
     this.customFonts = [];
     this.fontsVersion = 0;
     this.clipboard = null;
@@ -981,6 +983,48 @@ export class App {
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
       },
+      /** Registratore di schermo, webcam o entrambi: finestra di scelta, poi barra rossa con tempo e «Ferma». */
+      openRecorder() {
+        if (!recorderSupported()) return toast('Questo browser non sa registrare.', { type: 'warn' });
+        if (app.screenRec.recording) return A.stopRecording();
+        const desk = globalThis.ciakDesktop?.listSources ? globalThis.ciakDesktop : null;
+        const canScreen = screenSupported() || !!desk;
+        const modes = RECORD_MODES.filter((m) => canScreen || m.id === 'webcam');
+        const sel = h('select', { id: 'rec-mode', 'aria-label': 'Cosa registrare' }, modes.map((m) => h('option', { value: m.id }, m.label)));
+        const mic = h('input', { type: 'checkbox', id: 'rec-mic', checked: true, 'aria-label': 'Registra anche il microfono' });
+        const sys = h('input', { type: 'checkbox', id: 'rec-sys', 'aria-label': 'Registra anche l’audio del computer' });
+        const body = h('div', { class: 'exp-form' },
+          h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Cosa registrare'), sel),
+          h('label', { class: 'check' }, mic, h('span', {}, 'Registra anche la mia voce (microfono)')),
+          canScreen ? h('label', { class: 'check' }, sys, h('span', {}, 'Registra anche l’audio del computer', h('small', {}, ' (solo Windows e Chrome/Edge: usa le cuffie per evitare l’eco)'))) : null,
+          h('p', { class: 'hint' }, 'La registrazione finisce nella libreria e viene messa subito sulla timeline alla posizione della testina.'));
+        openDialog({ title: 'Registra', content: body, actions: [{ label: 'Annulla' }, { label: 'Inizia a registrare', primary: true, id: 'rec-go', onClick: () => { A.startRecording({ mode: sel.value, mic: mic.checked, systemAudio: sys.checked }); return true; } }] });
+      },
+      async startRecording({ mode, mic, systemAudio }) {
+        try {
+          if (mode !== 'webcam' && globalThis.ciakDesktop?.listSources && !(await app.#pickCaptureSource(systemAudio))) return;
+          await app.screenRec.start({ mode, mic, systemAudio }, { onEnded: () => A.stopRecording() });
+        } catch (e) {
+          if (!e.cancelled) toast(e.message, { type: 'error' });
+          return;
+        }
+        app.#showRecBar();
+        toast('Registrazione in corso…', { ms: 2500 });
+      },
+      async stopRecording() {
+        if (!app.screenRec.recording) return;
+        const mode = app.screenRec.mode;
+        app.#hideRecBar();
+        try {
+          const { blob, seconds } = await app.screenRec.stop();
+          const stamp = new Date().toLocaleString('it-IT').replace(/[/:]/g, '.').replace(', ', ' ');
+          const file = new File([blob], `Registrazione ${mode === 'screen' ? 'schermo' : mode === 'webcam' ? 'webcam' : 'schermo e webcam'} ${stamp}.webm`, { type: blob.type });
+          if (seconds < 0.5) return toast('Registrazione troppo breve.', { type: 'warn' });
+          await A.importFiles([file], { addToTimeline: true, start: app.player.time });
+        } catch (e) {
+          toast(`Registrazione non riuscita: ${e.message}`, { type: 'error' });
+        }
+      },
       /**
        * Strumenti video con ffmpeg (programma per computer): al contrario, stabilizza, meno disturbo, più nitido,
        * senza sfarfallio, ingrandisci, più fluido, super rallentatore. Il risultato è un nuovo file che prende il posto
@@ -1390,6 +1434,59 @@ export class App {
       },
     };
     return A;
+  }
+
+  /** Barra rossa «● Registrazione 0:12 — Ferma» sopra l'editor. */
+  #showRecBar() {
+    this.#hideRecBar();
+    const time = h('span', { id: 'rec-time' }, '0:00');
+    this.recBar = h('div', { class: 'rec-bar', role: 'status', 'aria-live': 'polite' }, h('span', { class: 'rec-dot' }), h('span', {}, 'Registrazione'), time, h('button', { class: 'btn small danger', type: 'button', id: 'btn-rec-stop', onClick: () => this.actions.stopRecording() }, icon('stop', 14), 'Ferma'));
+    document.body.append(this.recBar);
+    this.recTimer = setInterval(() => { time.textContent = formatDuration(this.screenRec.elapsed, 0); }, 500);
+    this.#refreshRecButtons();
+  }
+
+  #hideRecBar() {
+    clearInterval(this.recTimer);
+    this.recBar?.remove();
+    this.recBar = null;
+    this.#refreshRecButtons();
+  }
+
+  #refreshRecButtons() {
+    const b = document.querySelector('#btn-record-screen');
+    if (!b) return;
+    const rec = !!this.recBar;
+    b.replaceChildren(icon(rec ? 'stop' : 'camera', 16), rec ? 'Ferma la registrazione' : 'Registra schermo/webcam');
+  }
+
+  /** Programma per computer: finestra con schermi e finestre (con anteprima) fra cui scegliere. */
+  #pickCaptureSource(audio) {
+    const d = globalThis.ciakDesktop;
+    return new Promise((resolve) => {
+      d.listSources().then((sources) => {
+        if (!sources.length) {
+          toast('Non trovo schermi o finestre da registrare.', { type: 'error' });
+          return resolve(false);
+        }
+        const dlg = h('dialog', { class: 'dialog wide', id: 'capture-picker', 'aria-label': 'Scegli cosa registrare' });
+        const done = (v) => {
+          dlg.close();
+          dlg.remove();
+          resolve(v);
+        };
+        dlg.append(h('div', { class: 'dialog-body' },
+          h('h2', {}, 'Cosa vuoi registrare?'),
+          h('div', { class: 'src-grid' }, sources.map((s) => h('button', { class: 'src', type: 'button', 'data-id': s.id, title: s.name, onClick: async () => { await d.chooseSource(s.id, audio); done(true); } }, h('img', { src: s.thumbnail, alt: '' }), h('span', {}, s.name)))),
+          h('div', { class: 'btn-row end' }, h('button', { class: 'btn', type: 'button', onClick: () => done(false) }, 'Annulla'))));
+        dlg.addEventListener('close', () => resolve(false));
+        document.body.append(dlg);
+        dlg.showModal();
+      }).catch((e) => {
+        toast(`Impossibile elencare gli schermi: ${e.message}`, { type: 'error' });
+        resolve(false);
+      });
+    });
   }
 
   /** Sostituisce l'intero progetto (nuovo/apri) e ripulisce i media. */

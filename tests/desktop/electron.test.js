@@ -607,13 +607,51 @@ test('desktop: «Voce da testo» trasforma un testo in un clip audio con la voce
   }
 });
 
+test('desktop: «Registra schermo» elenca gli schermi veri, ne registra uno e mette la clip sulla timeline', { skip }, async () => {
+  const { app, win, errors } = await launch(tmp('ciak-ud-'));
+  try {
+    const sources = await win.evaluate(() => window.ciakDesktop.listSources());
+    assert.ok(sources.length >= 1, 'almeno uno schermo');
+    assert.ok(sources.every((x) => x.id && x.name && x.thumbnail.startsWith('data:image/')), 'ogni sorgente ha id, nome e anteprima');
+    await win.click('#btn-record-screen');
+    await win.selectOption('#rec-mode', 'screen');
+    await win.uncheck('#rec-mic');
+    await win.click('[data-act="rec-go"]');
+    await win.waitForSelector('#capture-picker .src', { timeout: 15000 });
+    assert.ok((await win.locator('#capture-picker .src').count()) >= 1);
+    await win.locator('#capture-picker .src').first().click();
+    await win.waitForSelector('.rec-bar', { timeout: 15000 });
+    await win.waitForFunction(() => /^0:0[2-9]$/.test(document.querySelector('#rec-time')?.textContent ?? ''), null, { timeout: 15000 });
+    await win.click('#btn-rec-stop');
+    await win.waitForFunction(() => window.__ciak.store.project.tracks.some((t) => t.clips.length), null, { timeout: 30000 });
+    const [c] = await win.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips));
+    assert.equal(c.kind, 'video');
+    assert.ok(c.duration >= 1.8 && c.duration < 15, `durata ${c.duration}`);
+    const media = await win.evaluate((id) => window.__ciak.store.project.media[id], c.mediaId);
+    assert.ok(media.width >= 320 && media.height >= 200, `dimensioni ${media.width}x${media.height}`);
+    assert.equal(await win.locator('.rec-bar').count(), 0);
+    // annullando il selettore non parte nessuna registrazione
+    await win.click('#btn-record-screen');
+    await win.selectOption('#rec-mode', 'screen');
+    await win.click('[data-act="rec-go"]');
+    await win.waitForSelector('#capture-picker');
+    await win.click('#capture-picker >> text=Annulla');
+    await win.waitForTimeout(400);
+    assert.equal(await win.locator('.rec-bar').count(), 0);
+    assert.equal(await win.locator('#capture-picker').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('desktop: esporta in MP4 vero (H.264/AAC, frequenza costante, faststart) tramite ffmpeg incluso', { skip }, async () => {
   const outDir = tmp('ciak-mp4-');
   const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg', CIAK_TEST_SAVE_DIR: outDir });
   try {
     // il ponte espone solo ciò che serve e la pagina continua a non vedere Node
     const bridge = await win.evaluate(() => ({ keys: Object.keys(window.ciakDesktop).sort(), node: typeof require, proc: typeof process }));
-    assert.deepEqual(bridge.keys, ['cancelConvert', 'convertAudio', 'convertToMp4', 'isDesktop', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
+    assert.deepEqual(bridge.keys, ['cancelConvert', 'chooseSource', 'convertAudio', 'convertToMp4', 'isDesktop', 'listSources', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
     assert.equal(`${bridge.node}|${bridge.proc}`, 'undefined|undefined');
     // dati non validi e percorsi non autorizzati non fanno danni
     const bad = await win.evaluate(() => window.ciakDesktop.convertToMp4(new Uint8Array(10), {}));

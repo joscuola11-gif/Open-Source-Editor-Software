@@ -89,3 +89,33 @@ export async function waitText(page, selector, regex, timeout = 5000) {
     return !!el && new RegExp(src, flags).test(el.textContent ?? '');
   }, [selector, regex.source, regex.flags], { timeout });
 }
+
+/** Sostituisce getDisplayMedia con uno schermo finto che si muove (canvas): si prova senza finestre vere. */
+export const fakeScreenScript = () => {
+  navigator.mediaDevices.getDisplayMedia = async (opts) => {
+    window.__displayRequest = opts;
+    const c = document.createElement('canvas');
+    c.width = 1280;
+    c.height = 720;
+    const g = c.getContext('2d');
+    let n = 0;
+    const draw = () => {
+      g.fillStyle = '#2a6df4';
+      g.fillRect(0, 0, c.width, c.height);
+      g.fillStyle = '#fff';
+      g.fillRect((n * 10) % (c.width - 160), 300, 160, 100);
+      n++;
+    };
+    draw();
+    const timer = setInterval(draw, 33);
+    const stream = c.captureStream(30);
+    const track = stream.getVideoTracks()[0];
+    window.__screenTrack = track;
+    const stop = track.stop.bind(track);
+    track.stop = () => {
+      clearInterval(timer);
+      stop();
+    };
+    return stream;
+  };
+};

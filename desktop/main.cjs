@@ -2,7 +2,7 @@
 // Guscio desktop di Ciak Studio: mostra l'editor (dist/ciak-studio.html) in una finestra nativa.
 // La pagina NON ha accesso a Node: contextIsolation e sandbox attivi, nessun preload.
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, screen, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -55,9 +55,48 @@ function saveState(win) {
 const ours = (url) => typeof url === 'string' && url.startsWith('file://') && url.split('#')[0].split('?')[0] === APP_URL;
 
 function hardenSession(ses) {
-  const allowed = new Set(['media', 'fullscreen']);
+  const allowed = new Set(['media', 'display-capture', 'fullscreen']);
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => callback(allowed.has(permission) && ours(details.requestingUrl)));
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => allowed.has(permission) && (ours(details?.requestingUrl) || requestingOrigin === 'file://'));
+}
+
+// ---- registrazione dello schermo: la pagina chiede l'elenco di schermi e finestre, l'utente sceglie, e solo allora
+// getDisplayMedia ottiene esattamente quella sorgente (senza una scelta recente la richiesta è rifiutata) ----------------
+const captureSources = new Map();
+let capturePick = null;
+
+ipcMain.handle('ciak:list-sources', async (event) => {
+  assertOurs(event);
+  const own = BrowserWindow.fromWebContents(event.sender)?.getMediaSourceId?.();
+  const ask = (type) => desktopCapturer.getSources({ types: [type], thumbnailSize: { width: 360, height: 225 }, fetchWindowIcons: false }).catch(() => []);
+  const list = [...(await ask('screen')), ...(await ask('window'))];
+  captureSources.clear();
+  const out = [];
+  for (const s of list) {
+    if (s.id === own || (!s.name && s.id.startsWith('window'))) continue; // la finestra di Ciak stessa creerebbe un tunnel infinito
+    captureSources.set(s.id, s);
+    out.push({ id: s.id, name: s.name || 'Schermo', kind: s.id.startsWith('screen') ? 'screen' : 'window', thumbnail: s.thumbnail.isEmpty() ? '' : s.thumbnail.toDataURL() });
+  }
+  return out.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'screen' ? -1 : 1));
+});
+
+ipcMain.handle('ciak:choose-source', (event, id, audio) => {
+  assertOurs(event);
+  if (!captureSources.has(id)) return false;
+  capturePick = { id, audio: Boolean(audio), at: Date.now() };
+  return true;
+});
+
+function installDisplayHandler(ses) {
+  ses.setDisplayMediaRequestHandler((request, callback) => {
+    const p = capturePick;
+    capturePick = null;
+    const src = p && Date.now() - p.at < 30_000 && ours(request.frame?.url) ? captureSources.get(p.id) : null;
+    if (!src) return callback({});
+    const streams = { video: src };
+    if (p.audio && process.platform === 'win32') streams.audio = 'loopback'; // audio del computer: solo Windows
+    return callback(streams);
+  }, { useSystemPicker: false });
 }
 
 function lockNavigation(contents) {
@@ -528,6 +567,7 @@ app.whenReady().then(() => {
   }
   Menu.setApplicationMenu(null); // nessuna barra dei menu: le scorciatoie le gestisce l'editor
   hardenSession(session.defaultSession);
+  installDisplayHandler(session.defaultSession);
   app.on('web-contents-created', (_e, contents) => lockNavigation(contents));
   createWindow();
   app.on('activate', () => {

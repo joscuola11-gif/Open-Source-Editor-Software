@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('ciakDesktop', {
   mp4Available: () => ipcRenderer.invoke('ciak:mp4-available'),
   convertToMp4: (bytes, options) => ipcRenderer.invoke('ciak:convert-mp4', bytes, options),
   convertAudio: (bytes, options) => ipcRenderer.invoke('ciak:convert-audio', bytes, options),
+  listSources: () => ipcRenderer.invoke('ciak:list-sources'),
+  chooseSource: (id, audio) => ipcRenderer.invoke('ciak:choose-source', String(id), Boolean(audio)),
   videoTool: (bytes, options) => ipcRenderer.invoke('ciak:video-tool', bytes, options),
   transcodeFile: (options) => ipcRenderer.invoke('ciak:transcode-file', options),
   ttsVoices: () => ipcRenderer.invoke('ciak:tts-voices'),
