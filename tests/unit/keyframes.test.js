@@ -137,3 +137,23 @@ test('Bézier: i keyframe interpolano con la curva scelta e i presets sono coere
     if (p.e !== 'linear') assert.deepEqual(parseBezier(p.e), p.b, p.id);
   }
 });
+
+test('maschera: dimensione, posizione e sfumatura si animano con i keyframe e tornano ai valori base', async () => {
+  const { createClip, sanitizeMask } = await import('../../src/core/project.js');
+  const { MASK_PROPS, upsertKeyframe, setValueAt: set, valueAt: va } = await import('../../src/core/keyframes.js');
+  assert.deepEqual(Object.keys(MASK_PROPS).sort(), ['maskFeather', 'maskSize', 'maskX', 'maskY']);
+  const c = createClip('video', { mask: { shape: 'circle' } });
+  assert.equal(va(c, 'maskSize', 0), 0.6);
+  assert.equal(va(c, 'maskX', 0), 0);
+  upsertKeyframe(c, 'maskX', 0, -0.25);
+  upsertKeyframe(c, 'maskX', 2, 0.25);
+  assert.equal(va(c, 'maskX', 1), 0);
+  assert.equal(va(c, 'maskX', 5), 0.25);
+  set(c, 'maskFeather', 0, 0.4); // senza keyframe modifica il valore base
+  assert.equal(c.mask.feather, 0.4);
+  set(c, 'maskX', 2, 0.5); // con keyframe aggiorna il keyframe
+  assert.equal(c.keyframes.maskX[1].v, 0.5);
+  // pulizia di maschere strane (progetti letti da file)
+  assert.deepEqual(sanitizeMask({ shape: 'boh', size: 99, x: 'a', rotation: 1000, feather: -3, invert: 1 }), { shape: 'none', size: 3, roundness: 0.25, invert: true, x: 0, y: 0, rotation: 360, feather: 0 });
+  assert.deepEqual(sanitizeMask(undefined), { shape: 'none', size: 0.6, roundness: 0.25, invert: false, x: 0, y: 0, rotation: 0, feather: 0 });
+});

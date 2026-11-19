@@ -30,8 +30,8 @@ const TABS = {
   audio: [['audio', 'Audio'], ['speed', 'Velocità']],
 };
 
-const PROP_LABEL = { x: 'Posizione X', y: 'Posizione Y', scale: 'Scala', rotation: 'Rotazione', opacity: 'Opacità', volume: 'Volume' };
-const PROP_UNIT = { x: 100, y: 100, scale: 100, rotation: 1, opacity: 100, volume: 100 };
+const PROP_LABEL = { x: 'Posizione X', y: 'Posizione Y', scale: 'Scala', rotation: 'Rotazione', opacity: 'Opacità', volume: 'Volume', maskSize: 'Maschera · dimensione', maskX: 'Maschera · posizione X', maskY: 'Maschera · posizione Y', maskFeather: 'Maschera · sfumatura' };
+const PROP_UNIT = { x: 100, y: 100, scale: 100, rotation: 1, opacity: 100, volume: 100, maskSize: 100, maskX: 100, maskY: 100, maskFeather: 100 };
 
 /** Icona di una disposizione: i riquadri disegnati in piccolo. */
 function layoutIcon(lay) {
@@ -117,7 +117,7 @@ export class Inspector {
       const tabs = TABS[clip.kind];
       const tab = tabs.some(([id]) => id === this.#tab[clip.kind]) ? this.#tab[clip.kind] : tabs[0][0];
       const parts = [clip.effects.map((e) => e.id).join(',')];
-      if (tab === 'anim') parts.push(Object.entries(clip.keyframes).map(([k, v]) => `${k}${v.length}:${v.map((q) => q.e).join('')}`).join(','), clip.transition?.type ?? '');
+      if (tab === 'anim') parts.push(Object.entries(clip.keyframes).map(([k, v]) => `${k}${v.length}:${v.map((q) => q.e).join('')}`).join(','), clip.transition?.type ?? '', clip.mask.shape);
       if (tab === 'text') parts.push(this.app.fontsVersion);
       if (tab === 'audio') parts.push(this.app.pool.info(clip.mediaId)?.peaks ? 'a' : '-');
       key = `c:${clip.id}:${tab}:${parts.join(';')}`;
@@ -351,7 +351,11 @@ export class Inspector {
     }
     out.push(section('Maschera', [
       this.#add(selectControl(this.ctx, { label: 'Forma', options: MASKS, get: (c) => c.mask.shape, set: (c, v) => { c.mask.shape = v; }, history: 'Maschera' })),
-      this.S({ label: 'Dimensione', min: 5, max: 150, step: 1, unit: '%', get: (c) => c.mask.size * 100, set: (c, v) => { c.mask.size = v / 100; }, def: 60, history: 'Maschera' }),
+      this.S({ label: 'Dimensione', min: 5, max: 300, step: 1, unit: '%', get: (c, t) => this.#val(c, 'maskSize', t) * 100, set: (c, v, t) => this.#set(c, 'maskSize', t, v / 100), kf: 'maskSize', def: 60, history: 'Maschera' }),
+      this.S({ label: 'Posizione X maschera', min: -100, max: 100, step: 0.5, unit: '%', decimals: 1, get: (c, t) => this.#val(c, 'maskX', t) * 100, set: (c, v, t) => this.#set(c, 'maskX', t, v / 100), kf: 'maskX', def: 0, history: 'Maschera' }),
+      this.S({ label: 'Posizione Y maschera', min: -100, max: 100, step: 0.5, unit: '%', decimals: 1, get: (c, t) => this.#val(c, 'maskY', t) * 100, set: (c, v, t) => this.#set(c, 'maskY', t, v / 100), kf: 'maskY', def: 0, history: 'Maschera' }),
+      this.S({ label: 'Rotazione maschera', min: -180, max: 180, step: 1, unit: '°', get: (c) => c.mask.rotation, set: (c, v) => { c.mask.rotation = v; }, def: 0, history: 'Maschera' }),
+      this.S({ label: 'Sfumatura dei bordi', min: 0, max: 100, step: 1, unit: '%', get: (c, t) => this.#val(c, 'maskFeather', t) * 100, set: (c, v, t) => this.#set(c, 'maskFeather', t, v / 100), kf: 'maskFeather', def: 0, history: 'Maschera' }),
       this.S({ label: 'Arrotondamento', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.mask.roundness * 100, set: (c, v) => { c.mask.roundness = v / 100; }, def: 25, history: 'Maschera' }),
       this.#add(toggleControl(this.ctx, { label: 'Inverti maschera', get: (c) => c.mask.invert, set: (c, v) => { c.mask.invert = v; } })),
     ], { open: clip.mask.shape !== 'none' }));
@@ -596,7 +600,7 @@ export class Inspector {
     const { store, player } = this.app;
     const wrap = h('div', { class: 'kf-list' });
     const props = KEYFRAME_PROPS.filter((p) => clip.keyframes[p]?.length);
-    const add = h('div', { class: 'btn-row wrap' }, KEYFRAME_PROPS.filter((p) => p !== 'volume' || !isVisualKind(clip.kind) || clip.kind === 'video').map((p) =>
+    const add = h('div', { class: 'btn-row wrap' }, KEYFRAME_PROPS.filter((p) => (p !== 'volume' || !isVisualKind(clip.kind) || clip.kind === 'video') && (!p.startsWith('mask') || clip.mask.shape !== 'none')).map((p) =>
       h('button', { class: 'btn small', type: 'button', 'data-kf': p, title: `Aggiungi un keyframe «${PROP_LABEL[p]}» alla posizione della testina`, onClick: () => this.app.actions.toggleKeyframe(p) }, icon('diamond', 12), PROP_LABEL[p])));
     wrap.append(add);
     if (!props.length) wrap.append(h('p', { class: 'hint' }, 'Nessun keyframe. Aggiungine uno, sposta la testina e cambia il valore: il programma interpola il movimento.'));

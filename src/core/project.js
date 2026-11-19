@@ -93,7 +93,7 @@ export function createClip(kind, props = {}) {
     transform: { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, flipX: false, flipY: false },
     crop: { l: 0, t: 0, r: 0, b: 0 },
     blend: 'normal',
-    mask: { shape: 'none', size: 0.6, roundness: 0.25, invert: false },
+    mask: { shape: 'none', size: 0.6, roundness: 0.25, invert: false, x: 0, y: 0, rotation: 0, feather: 0 },
     backdrop: { mode: 'none', amount: 60, color: '#000000' },
     adjust: { brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0, vignette: 0, temperature: 0, tint: 0, grain: 0 },
     filter: { id: 'none', intensity: 1 },
@@ -150,6 +150,20 @@ export function maxSourceSpan(p, clip) {
 // ---------------------------------------------------------------------------
 
 const num = (v, d, lo = -Infinity, hi = Infinity) => (isNum(v) ? clamp(v, lo, hi) : d);
+
+export function sanitizeMask(raw) {
+  const m = raw && typeof raw === 'object' ? raw : {};
+  return {
+    shape: ['none', 'circle', 'rect', 'rounded', 'heart', 'star', 'triangle'].includes(m.shape) ? m.shape : 'none',
+    size: num(m.size, 0.6, 0.02, 3),
+    roundness: num(m.roundness, 0.25, 0, 1),
+    invert: !!m.invert,
+    x: num(m.x, 0, -2, 2),
+    y: num(m.y, 0, -2, 2),
+    rotation: num(m.rotation, 0, -360, 360),
+    feather: num(m.feather, 0, 0, 1),
+  };
+}
 
 export const BACKDROP_MODES = ['none', 'blur', 'color'];
 export function sanitizeBackdrop(raw) {
@@ -208,6 +222,7 @@ export function sanitizeClip(raw, p) {
   }
   clip.grade = sanitizeGrade(raw.grade);
   clip.backdrop = sanitizeBackdrop(raw.backdrop);
+  clip.mask = sanitizeMask(raw.mask);
   if (clip.kind === 'text') {
     clip.text.karaoke = sanitizeKaraoke(raw.text?.karaoke);
     clip.text.words = sanitizeWords(raw.text?.words);

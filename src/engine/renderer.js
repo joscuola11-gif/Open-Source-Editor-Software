@@ -352,7 +352,11 @@ export class Renderer {
     const overlays = this.#overlaysFor(clip, t, fps);
     const gradeOn = !!bitmap && !gradeIsIdentity(clip.grade);
     const glow = clip.effects.find((f) => f.type === 'glow');
-    const needLayer = overlays.length > 0 || (!!procedural && opacity < 0.999 && clip.kind !== 'sticker') || !!glow;
+    // maschera: valori animabili (dimensione, posizione, sfumatura); con sfumatura si lavora in uno strato a parte
+    const maskOn = clip.mask.shape !== 'none';
+    const mask = maskOn ? { ...clip.mask, size: valueAt(clip, 'maskSize', local), x: valueAt(clip, 'maskX', local), y: valueAt(clip, 'maskY', local), feather: valueAt(clip, 'maskFeather', local) } : clip.mask;
+    const feather = maskOn && mask.feather > 0.004 && this.supportsFilter;
+    const needLayer = overlays.length > 0 || (!!procedural && opacity < 0.999 && clip.kind !== 'sticker') || !!glow || feather;
 
     // --- contenuto pronto (eventuale fase pixel) ----------------------------------
     let drawImage = null; // (c, dx, dy, dw, dh) disegna il bitmap (già elaborato) nel riquadro
@@ -403,7 +407,7 @@ export class Renderer {
     target.scale(scale * (tf.flipX ? -1 : 1) * an.sx, scale * (tf.flipY ? -1 : 1) * an.sy);
 
     if (an.reveal) this.#clipReveal(target, an.reveal, box);
-    if (clip.mask.shape !== 'none') this.#clipMask(target, clip.mask, box);
+    if (maskOn && !feather) this.#clipMask(target, mask, box);
 
     const bx = box.ox - box.w / 2;
     const by = box.oy - box.h / 2;
@@ -417,6 +421,7 @@ export class Renderer {
       if (glow && drawImage && this.supportsFilter) this.#paintGlow(target, glow, drawImage, box, scale, H, bx, by);
       this.#paintOverlays(target, overlays, box, bx, by);
     }
+    if (feather) this.#featherMask(target, mask, box, scale);
     target.restore();
 
     if (needLayer) {
@@ -609,7 +614,8 @@ export class Renderer {
     c.clip(path); // senza forme (p = 0) il ritaglio è vuoto: il clip non si vede ancora
   }
 
-  #clipMask(c, mask, box) {
+  /** Percorso della maschera (con posizione e rotazione) nel sistema del riquadro del clip. */
+  #maskPath(mask, box) {
     const m = Math.min(box.w, box.h);
     const s = Math.max(0.02, mask.size);
     let path;
@@ -620,8 +626,25 @@ export class Renderer {
       const big = Math.max(box.w, box.h) * 4;
       full.rect(-big, -big, big * 2, big * 2);
     }
-    full.addPath(path, new DOMMatrix([1, 0, 0, 1, box.ox, box.oy]));
-    c.clip(full, mask.invert ? 'evenodd' : 'nonzero');
+    const rot = ((mask.rotation ?? 0) * Math.PI) / 180;
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    full.addPath(path, new DOMMatrix([cos, sin, -sin, cos, box.ox + (mask.x ?? 0) * box.w, box.oy + (mask.y ?? 0) * box.h]));
+    return full;
+  }
+
+  #clipMask(c, mask, box) {
+    c.clip(this.#maskPath(mask, box), mask.invert ? 'evenodd' : 'nonzero');
+  }
+
+  /** Maschera con bordi sfumati: tiene del contenuto già disegnato solo ciò che sta dentro la forma sfocata. */
+  #featherMask(c, mask, box, scale) {
+    c.save();
+    c.globalCompositeOperation = 'destination-in';
+    c.fillStyle = '#000';
+    c.filter = `blur(${Math.max(0.5, mask.feather * Math.min(box.w, box.h) * scale * 0.25).toFixed(2)}px)`;
+    c.fill(this.#maskPath(mask, box), mask.invert ? 'evenodd' : 'nonzero');
+    c.restore();
   }
 
   // ---------------------------------------------------------------------------

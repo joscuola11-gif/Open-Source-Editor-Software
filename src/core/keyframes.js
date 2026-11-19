@@ -3,7 +3,9 @@
 
 import { TOL, lerp } from './util.js';
 
-export const KEYFRAME_PROPS = ['x', 'y', 'scale', 'rotation', 'opacity', 'volume'];
+export const KEYFRAME_PROPS = ['x', 'y', 'scale', 'rotation', 'opacity', 'volume', 'maskSize', 'maskX', 'maskY', 'maskFeather'];
+/** Proprietà della maschera che si possono animare (valori in frazioni: dimensione, posizione e sfumatura). */
+export const MASK_PROPS = { maskSize: 'size', maskX: 'x', maskY: 'y', maskFeather: 'feather' };
 
 export const EASING_LABELS = {
   linear: 'Lineare',
@@ -104,11 +106,14 @@ export const BEZIER_PRESETS = [
 ];
 
 export function baseValue(clip, prop) {
-  return prop === 'volume' ? clip.volume : clip.transform[prop];
+  if (prop === 'volume') return clip.volume;
+  if (MASK_PROPS[prop]) return clip.mask?.[MASK_PROPS[prop]] ?? 0;
+  return clip.transform[prop];
 }
 
 export function setBaseValue(clip, prop, v) {
   if (prop === 'volume') clip.volume = v;
+  else if (MASK_PROPS[prop]) clip.mask[MASK_PROPS[prop]] = v;
   else clip.transform[prop] = v;
 }
 

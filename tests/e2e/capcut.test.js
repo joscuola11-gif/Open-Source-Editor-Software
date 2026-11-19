@@ -1241,3 +1241,73 @@ test('curva dei keyframe: scegli una curva pronta o trascina le maniglie; l’in
     assert.match(await page.textContent('.kf-curve:not([hidden])'), /Scatto/);
   });
 });
+
+// ---------------------------------------------------------------- maschera: posizione, sfumatura, keyframe
+/** Quanti pixel «intermedi» (né pieni né vuoti) si trovano lungo una riga orizzontale dell'anteprima. */
+async function edgeSoftness(page, y = 0.5) {
+  await page.evaluate(() => window.__ciak.player.settle());
+  return page.evaluate((fy) => {
+    const c = window.__ciak.preview.canvas;
+    const row = c.getContext('2d').getImageData(0, Math.floor(c.height * fy), c.width, 1).data;
+    let mid = 0;
+    let full = 0;
+    for (let i = 0; i < c.width; i++) {
+      const r = row[i * 4];
+      if (r > 215) full++;
+      else if (r > 40) mid++;
+    }
+    return { mid, full, width: c.width };
+  }, y);
+}
+
+test('maschera: cerchio spostato a sinistra; la sfumatura rende morbido il bordo, senza è netto', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await page.evaluate(() => window.__ciak.commit('maschera', (d) => {
+      const c = d.tracks.flatMap((t) => t.clips)[0];
+      c.mask = { ...c.mask, shape: 'circle', size: 0.5, x: -0.25, y: 0, feather: 0 };
+    }));
+    await seek(page, 1);
+    assert.ok(isRed(await pixel(page, 0.25, 0.5)), 'dentro il cerchio, a sinistra: rosso');
+    assert.ok(isBlack(await pixel(page, 0.75, 0.5)), 'a destra: fuori dalla maschera');
+    const hard = await edgeSoftness(page);
+    assert.ok(hard.mid <= 3, `bordo netto: ${hard.mid} pixel intermedi`);
+    await page.evaluate(() => window.__ciak.commit('sfuma', (d) => { d.tracks.flatMap((t) => t.clips)[0].mask.feather = 0.3; }));
+    await seek(page, 1);
+    const soft = await edgeSoftness(page);
+    assert.ok(soft.mid >= 25, `bordo sfumato: ${soft.mid} pixel intermedi su ${soft.width}`);
+    assert.ok(soft.mid > hard.mid * 5);
+    // il centro del cerchio resta pieno
+    const [r] = await pixel(page, 0.25, 0.5);
+    assert.ok(r > 200);
+    // invertita: il centro si svuota
+    await page.evaluate(() => window.__ciak.commit('inv', (d) => { d.tracks.flatMap((t) => t.clips)[0].mask.invert = true; }));
+    await seek(page, 1);
+    assert.ok(isBlack(await pixel(page, 0.25, 0.5)), 'inversa: vuoto dove c’era il cerchio');
+    assert.ok(isRed(await pixel(page, 0.9, 0.5)), 'inversa: pieno fuori');
+  });
+});
+
+test('maschera: i keyframe di posizione la fanno scorrere nel tempo e il pannello offre il rombo per ogni valore', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await page.evaluate(() => window.__ciak.commit('maschera', (d) => {
+      const c = d.tracks.flatMap((t) => t.clips)[0];
+      c.mask = { ...c.mask, shape: 'circle', size: 0.4 };
+      c.keyframes.maskX = [{ t: 0, v: -0.3, e: 'linear' }, { t: 3, v: 0.3, e: 'linear' }];
+    }));
+    await seek(page, 0.05);
+    assert.ok(isRed(await pixel(page, 0.2, 0.5)) && isBlack(await pixel(page, 0.8, 0.5)), 'all’inizio a sinistra');
+    await seek(page, 2.95);
+    assert.ok(isBlack(await pixel(page, 0.2, 0.5)) && isRed(await pixel(page, 0.8, 0.5)), 'alla fine a destra');
+    // i pulsanti per aggiungere keyframe alla maschera compaiono solo con una maschera attiva
+    await inspectorTab(page, 'Animazione');
+    assert.equal(await page.locator('[data-kf="maskX"]').count(), 1);
+    assert.equal(await page.locator('[data-kf="maskFeather"]').count(), 1);
+    await page.evaluate(() => window.__ciak.commit('niente', (d) => { d.tracks.flatMap((t) => t.clips)[0].mask.shape = 'none'; }));
+    await page.waitForFunction(() => !document.querySelector('[data-kf="maskX"]'), null, { timeout: 5000 });
+  });
+});
