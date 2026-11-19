@@ -2308,3 +2308,24 @@ input[type='range'] {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- disposizioni (schermo diviso) ---------- */
+.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px;
+}
+.layout-btn {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+.layout-btn:hover,
+.layout-btn:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}

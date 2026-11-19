@@ -93,6 +93,7 @@ export function createClip(kind, props = {}) {
     crop: { l: 0, t: 0, r: 0, b: 0 },
     blend: 'normal',
     mask: { shape: 'none', size: 0.6, roundness: 0.25, invert: false },
+    backdrop: { mode: 'none', amount: 60, color: '#000000' },
     adjust: { brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0, vignette: 0, temperature: 0, tint: 0, grain: 0 },
     filter: { id: 'none', intensity: 1 },
     grade: defaultGrade(),
@@ -149,6 +150,16 @@ export function maxSourceSpan(p, clip) {
 
 const num = (v, d, lo = -Infinity, hi = Infinity) => (isNum(v) ? clamp(v, lo, hi) : d);
 
+export const BACKDROP_MODES = ['none', 'blur', 'color'];
+export function sanitizeBackdrop(raw) {
+  const b = raw && typeof raw === 'object' ? raw : {};
+  return {
+    mode: BACKDROP_MODES.includes(b.mode) ? b.mode : 'none',
+    amount: num(b.amount, 60, 0, 100),
+    color: /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : '#000000',
+  };
+}
+
 export function sanitizeClip(raw, p) {
   if (!raw || typeof raw !== 'object' || !ALL_KINDS.includes(raw.kind)) return null;
   const clip = createClip(raw.kind, raw);
@@ -195,6 +206,7 @@ export function sanitizeClip(raw, p) {
     else delete clip.keyframes[prop];
   }
   clip.grade = sanitizeGrade(raw.grade);
+  clip.backdrop = sanitizeBackdrop(raw.backdrop);
   if (clip.kind === 'text') {
     clip.text.karaoke = sanitizeKaraoke(raw.text?.karaoke);
     clip.text.words = sanitizeWords(raw.text?.words);

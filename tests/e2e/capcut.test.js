@@ -958,3 +958,114 @@ test('transizioni: la libreria le mostra a gruppi e l’inspector le elenca per 
     assert.equal(await page.inputValue('#sel-transition'), 'push-left', 'la voce scelta è selezionata');
   });
 });
+
+// ---------------------------------------------------------------- sfondo dietro il clip
+test('sfondo sfocato: un video orizzontale in formato verticale non lascia i lati neri; senza resta nero', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await page.evaluate(() => window.__ciak.commit('Formato', (d) => { d.settings.width = 1080; d.settings.height = 1920; }));
+    await seek(page, 1);
+    const top = () => pixel(page, 0.5, 0.06);
+    const mid = () => pixel(page, 0.5, 0.5);
+    const [r0, g0, b0] = await top();
+    assert.ok(r0 + g0 + b0 < 12, `senza sfondo l'alto è nero (${r0},${g0},${b0})`);
+    assert.ok(isRed(await mid()), 'il centro è il video');
+    // dal pannello: Sfondo dietro il clip → Sfocato
+    await page.locator('.clip').first().click();
+    await page.locator('.insp-tabs .tab', { hasText: 'Video' }).click().catch(() => {});
+    await page.locator('details.section summary', { hasText: 'Sfondo dietro il clip' }).click();
+    await page.selectOption('.ctl.select:has(.ctl-label:text-is("Tipo")) select', 'blur');
+    await seek(page, 1);
+    const [r, g, b] = await top();
+    assert.ok(r > 120 && g < 40 && b < 40, `con lo sfondo sfocato l'alto è rossastro (${r},${g},${b})`);
+    assert.ok(isRed(await mid()), 'il centro resta il video nitido');
+    // colore
+    await page.evaluate(() => window.__ciak.commit('x', (d) => { const c = d.tracks.flatMap((t) => t.clips)[0]; c.backdrop.mode = 'color'; c.backdrop.color = '#00ff00'; }));
+    await seek(page, 1);
+    const [r2, g2, b2] = await top();
+    assert.ok(g2 > 200 && r2 < 40 && b2 < 40, `colore verde (${r2},${g2},${b2})`);
+    // «per tutti i clip» e annulla
+    await page.evaluate(() => window.__ciak.actions.setBackdropAll('blur'));
+    assert.equal(await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].backdrop.mode), 'blur');
+    await page.click('#btn-undo');
+    assert.equal(await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].backdrop.mode), 'color');
+  });
+});
+
+test('sfondo sfocato: un clip che riempie già lo schermo non si disegna due volte (stessa immagine)', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await seek(page, 1);
+    const a = await pixel(page, 0.02, 0.02);
+    await page.evaluate(() => window.__ciak.actions.setBackdropAll('blur'));
+    await seek(page, 1);
+    assert.deepEqual(await pixel(page, 0.02, 0.02), a);
+  });
+});
+
+// ---------------------------------------------------------------- disposizioni (schermo diviso)
+async function twoTracks(page) {
+  await importFiles(page, [m.f('red.webm'), m.f('blue.webm')]);
+  await addMedia(page, 0);
+  await page.evaluate(() => window.__ciak.player.seek(0));
+  await addMedia(page, 1); // stesso istante: finisce su un'altra traccia
+  await page.waitForFunction(() => document.querySelectorAll('.clip').length === 2);
+  return page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).map((c) => c.id));
+}
+
+test('schermo diviso: due clip affiancati e uno sopra l’altro, dal pannello; si annulla', async () => {
+  await withApp(async ({ page }) => {
+    const ids = await twoTracks(page);
+    await page.evaluate((ids) => window.__ciak.selection.set(ids), ids);
+    await page.locator('.clip').first().click();
+    await page.keyboard.down('Shift');
+    await page.locator('.clip').nth(1).click();
+    await page.keyboard.up('Shift');
+    await page.waitForSelector('[data-layout="split-2h"]');
+    await page.click('[data-layout="split-2h"]');
+    await seek(page, 1);
+    const sel = await page.evaluate(() => window.__ciak.selection.ids);
+    assert.equal(sel.length, 2);
+    // chi è a sinistra? il primo clip della selezione
+    const first = await page.evaluate((id) => window.__ciak.store.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id).mediaId, sel[0]);
+    const left = await pixel(page, 0.25, 0.5);
+    const right = await pixel(page, 0.75, 0.5);
+    assert.ok((isRed(left) && isBlue(right)) || (isBlue(left) && isRed(right)), `metà e metà: ${left} | ${right}`);
+    assert.ok(first);
+    // niente nero in mezzo: entrambi riempiono la propria metà fino al bordo
+    assert.ok(!isBlack(await pixel(page, 0.02, 0.5)) && !isBlack(await pixel(page, 0.98, 0.5)) && !isBlack(await pixel(page, 0.5, 0.02)));
+    await page.click('[data-layout="split-2v"]');
+    await seek(page, 1);
+    const top = await pixel(page, 0.5, 0.25);
+    const bottom = await pixel(page, 0.5, 0.75);
+    assert.ok((isRed(top) && isBlue(bottom)) || (isBlue(top) && isRed(bottom)), `sopra e sotto: ${top} | ${bottom}`);
+    // PiP in basso a destra: il primo a schermo intero, il secondo piccolo nell'angolo
+    await page.click('[data-layout="pip-br"]');
+    await seek(page, 1);
+    const big = await pixel(page, 0.2, 0.2);
+    const small = await pixel(page, 0.82, 0.82);
+    assert.ok(!isBlack(big) && !isBlack(small));
+    assert.notDeepEqual(big.slice(0, 3), small.slice(0, 3), 'i due colori sono diversi');
+    await page.click('#btn-undo');
+    await seek(page, 1);
+    assert.deepEqual(await pixel(page, 0.5, 0.25), top, 'dopo l’annulla è tornato «uno sopra l’altro»');
+    assert.deepEqual(await pixel(page, 0.5, 0.75), bottom);
+  });
+});
+const isBlack = ([r, g, b]) => r + g + b < 30;
+
+test('schermo diviso: con un solo clip selezionato spiega cosa serve e non cambia nulla', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    const before = JSON.stringify(await clips(page));
+    await page.locator('details.section summary', { hasText: 'Disposizione' }).click();
+    await page.click('[data-layout="grid-4"]');
+    await page.waitForSelector('.toast.warn');
+    assert.match(await page.textContent('.toast.warn'), /almeno 4 clip/);
+    assert.equal(JSON.stringify(await clips(page)), before);
+  });
+});

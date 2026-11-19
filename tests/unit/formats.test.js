@@ -177,3 +177,16 @@ test('formatDuration con decimali riporta correttamente al minuto successivo', (
   assert.equal(formatDuration(75.25, 1), '1:15.3');
   assert.equal(formatDuration(0, 1), '0:00.0');
 });
+
+test('sfondo dietro il clip: valori di partenza, riparazione di valori strani e vecchi progetti senza il campo', async () => {
+  const { createClip, sanitizeBackdrop, sanitizeProject } = await import('../../src/core/project.js');
+  const c = createClip('video');
+  assert.deepEqual(c.backdrop, { mode: 'none', amount: 60, color: '#000000' });
+  assert.deepEqual(sanitizeBackdrop(null), { mode: 'none', amount: 60, color: '#000000' });
+  assert.deepEqual(sanitizeBackdrop({ mode: 'blur', amount: 500, color: 'rosso' }), { mode: 'blur', amount: 100, color: '#000000' });
+  assert.deepEqual(sanitizeBackdrop({ mode: 'magia', amount: -4, color: '#12AB34' }), { mode: 'none', amount: 0, color: '#12AB34' });
+  // un progetto salvato prima di questa funzione si apre con lo sfondo spento
+  const old = { name: 'vecchio', settings: { width: 1920, height: 1080, fps: 30, background: '#000000' }, media: { m: { id: 'm', kind: 'image', name: 'a', mime: 'image/png', size: 1, duration: 0, width: 10, height: 10 } }, tracks: [{ id: 't', type: 'video', name: 'V', clips: [{ id: 'c1', kind: 'image', mediaId: 'm', start: 0, duration: 2 }] }] };
+  const p = sanitizeProject(old);
+  assert.equal(p.tracks[0].clips[0].backdrop.mode, 'none');
+});

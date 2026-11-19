@@ -11,6 +11,7 @@ import { ASPECTS, BLEND_MODES, EFFECTS, FILTERS, FONTS, FPS_OPTIONS, MASKS, SHAP
 import { ANIMATIONS, ENTER_EXIT_IDS, LOOPS, LOOP_IDS, transitionGroups } from '../core/animations.js';
 import { EASING_LABELS, KEYFRAME_PROPS, removeKeyframeAt, setValueAt, valueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
+import { LAYOUTS } from '../core/layouts.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
 import { KARAOKE_MODES } from '../core/karaoke.js';
 import { SILENCE_DEFAULTS, findSilences, timelineRanges } from '../core/silence.js';
@@ -28,6 +29,25 @@ const TABS = {
 
 const PROP_LABEL = { x: 'Posizione X', y: 'Posizione Y', scale: 'Scala', rotation: 'Rotazione', opacity: 'Opacità', volume: 'Volume' };
 const PROP_UNIT = { x: 100, y: 100, scale: 100, rotation: 1, opacity: 100, volume: 100 };
+
+/** Icona di una disposizione: i riquadri disegnati in piccolo. */
+function layoutIcon(lay) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 48 28');
+  svg.setAttribute('width', '48');
+  svg.setAttribute('height', '28');
+  svg.setAttribute('aria-hidden', 'true');
+  const frame = document.createElementNS(NS, 'rect');
+  for (const [k, v] of Object.entries({ x: 0.5, y: 0.5, width: 47, height: 27, rx: 3, fill: 'none', stroke: 'currentColor', 'stroke-opacity': 0.35 })) frame.setAttribute(k, v);
+  svg.append(frame);
+  lay.cells.forEach((c, i) => {
+    const r = document.createElementNS(NS, 'rect');
+    for (const [k, v] of Object.entries({ x: 1.5 + c.x * 45, y: 1.5 + c.y * 25, width: Math.max(2, c.w * 45 - 1), height: Math.max(2, c.h * 25 - 1), rx: 1.5, fill: 'currentColor', 'fill-opacity': i === 0 ? 0.5 : 0.85 })) r.setAttribute(k, v);
+    svg.append(r);
+  });
+  return svg;
+}
 
 export class Inspector {
   #controls = [];
@@ -245,6 +265,7 @@ export class Inspector {
         this.#add(multi('Opacità', 0, 100, (c) => c.transform.opacity * 100, (c, v) => { c.transform.opacity = v / 100; }, '%', (c) => isVisualKind(c.kind))),
         this.#add(multi('Volume', 0, 200, (c) => c.volume * 100, (c, v) => { c.volume = v / 100; }, '%', (c) => c.kind === 'video' || c.kind === 'audio')),
       ]),
+      this.#layoutSection(true),
       section('Azioni', [
         h('div', { class: 'btn-row wrap' },
           actionButton({ label: 'Duplica', icon: 'copy', onClick: () => actions.duplicate() }),
@@ -257,6 +278,17 @@ export class Inspector {
   // ---------------------------------------------------------------------------
   // Video / trasformazione
   // ---------------------------------------------------------------------------
+
+  /** Disposizioni (schermo diviso / PiP) per i clip selezionati. */
+  #layoutSection(open) {
+    const { actions } = this.app;
+    const fillSel = h('select', { id: 'sel-layout-fill', 'aria-label': 'Come riempire i riquadri' }, h('option', { value: 'cover' }, 'Riempi (ritaglia i bordi)'), h('option', { value: 'contain' }, 'Adatta (mostra tutto)'));
+    return section('Disposizione (schermo diviso / PiP)', [
+      h('p', { class: 'hint' }, 'Seleziona più clip (Ctrl o Maiusc + clic): il primo va nel primo riquadro, e così via. I clip in fila vengono messi insieme, ognuno su una traccia.'),
+      h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Riquadri'), fillSel),
+      h('div', { class: 'layout-grid', role: 'group', 'aria-label': 'Disposizioni' }, LAYOUTS.map((lay) => h('button', { class: 'layout-btn', type: 'button', 'data-layout': lay.id, title: `${lay.label} (servono ${lay.min} clip)`, 'aria-label': lay.label, onClick: () => actions.applyLayout(lay.id, { fill: fillSel.value }) }, layoutIcon(lay)))),
+    ], { open });
+  }
 
   #videoTab(clip) {
     const { actions } = this.app;
@@ -276,12 +308,22 @@ export class Inspector {
           actionButton({ label: 'Ribalta ↕', icon: 'flipV', onClick: () => actions.flipClip('flipY') })),
       ]));
     }
+    if (clip.kind === 'video' || clip.kind === 'image') out.push(this.#layoutSection(false));
     out.push(section('Fusione', [
       this.#add(selectControl(this.ctx, { label: 'Metodo', options: BLEND_MODES, get: (c) => c.blend, set: (c, v) => { c.blend = v; }, history: 'Metodo di fusione' })),
     ], { open: clip.kind === 'adjustment' ? false : true }));
     if (clip.kind === 'video' || clip.kind === 'image') {
       out.push(section('Ritaglio', ['l', 't', 'r', 'b'].map((side, i) =>
         this.S({ label: ['Sinistra', 'Alto', 'Destra', 'Basso'][i], min: 0, max: 90, step: 1, unit: '%', get: (c) => c.crop[side] * 100, set: (c, v) => { c.crop[side] = Math.min(0.95 - (side === 'l' ? c.crop.r : side === 'r' ? c.crop.l : side === 't' ? c.crop.b : c.crop.t), v / 100); }, def: 0, history: 'Ritaglio' })), { open: false }));
+    }
+    if (clip.kind === 'video' || clip.kind === 'image') {
+      out.push(section('Sfondo dietro il clip', [
+        this.#add(selectControl(this.ctx, { label: 'Tipo', options: [{ id: 'none', label: 'Nessuno' }, { id: 'blur', label: 'Sfocato (la stessa immagine)' }, { id: 'color', label: 'Colore' }], get: (c) => c.backdrop.mode, set: (c, v) => { c.backdrop.mode = v; }, history: 'Sfondo del clip' })),
+        this.S({ label: 'Sfocatura', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.backdrop.amount, set: (c, v) => { c.backdrop.amount = v; }, def: 60, history: 'Sfondo del clip' }),
+        this.#add(colorPicker(this.ctx, { label: 'Colore', get: (c) => c.backdrop.color, set: (c, v) => { c.backdrop.color = v; }, history: 'Sfondo del clip' })),
+        h('div', { class: 'btn-row wrap' }, actionButton({ label: 'Sfondo sfocato per tutti i clip', title: 'Riempie con una copia sfocata i lati vuoti di tutti i video e le foto', onClick: () => actions.setBackdropAll('blur') })),
+        h('p', { class: 'hint' }, 'Quando un video orizzontale va in un formato verticale (o il contrario) i lati non restano neri: si vede la stessa immagine ingrandita e sfocata.'),
+      ], { open: clip.backdrop.mode !== 'none' }));
     }
     if (clip.kind === 'video' && globalThis.ciakDesktop?.videoTool) {
       const tools = [

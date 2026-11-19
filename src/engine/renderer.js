@@ -118,6 +118,7 @@ export function filterParamsFor(clip, H) {
 export class Renderer {
   #measure;
   #layer = null;
+  #backdropCtx = null;
   #scratchA = null;
   #scratchB = null;
   #snap = null;
@@ -338,6 +339,9 @@ export class Renderer {
       bitmap.ch = Math.max(1, bitmap.sh * (1 - ct - b));
     }
 
+    // sfondo dietro il clip (sfocato come il clip stesso, o a colore), solo dove il clip non copre già tutto lo schermo
+    if (bitmap && clip.backdrop && clip.backdrop.mode !== 'none' && !(Math.abs(rot) < 0.01 && Math.abs(x * W + box.ox * scale) <= (box.w * scale - W) / 2 + 0.5 && Math.abs(y * H + box.oy * scale) <= (box.h * scale - H) / 2 + 0.5)) this.#drawBackdrop(ctx, clip.backdrop, bitmap, W, H, opacity);
+
     // --- parametri di stile -----------------------------------------------------
     const fp = filterParamsFor(clip, H);
     const hasColor = !isIdentityParams(fp);
@@ -423,6 +427,39 @@ export class Renderer {
       ctx.restore();
     }
     drawOverlayOnly();
+  }
+
+  /** Sfondo dietro il clip: copia sfocata che riempie lo schermo (si disegna piccola e si ingrandisce: costa poco) o tinta unita. */
+  #drawBackdrop(ctx, bd, bitmap, W, H, opacity) {
+    ctx.save();
+    ctx.globalAlpha = clamp(opacity, 0, 1);
+    ctx.globalCompositeOperation = 'source-over';
+    if (bd.mode === 'color') {
+      ctx.fillStyle = bd.color;
+      ctx.fillRect(0, 0, W, H);
+    } else if (bd.mode === 'blur') {
+      const sw = Math.max(24, Math.round(W / 8));
+      const sh = Math.max(24, Math.round(H / 8));
+      this.#backdropCtx ??= makeCanvas(sw, sh).getContext('2d');
+      const s = this.#backdropCtx;
+      if (s.canvas.width !== sw || s.canvas.height !== sh) {
+        s.canvas.width = sw;
+        s.canvas.height = sh;
+      }
+      const k = Math.max(sw / bitmap.cw, sh / bitmap.ch);
+      const dw = bitmap.cw * k;
+      const dh = bitmap.ch * k;
+      s.clearRect(0, 0, sw, sh);
+      if (this.supportsFilter) s.filter = `blur(${(1 + (bd.amount / 100) * sw * 0.05).toFixed(2)}px)`;
+      s.drawImage(bitmap.img, bitmap.sx, bitmap.sy, bitmap.cw, bitmap.ch, (sw - dw) / 2, (sh - dh) / 2, dw, dh);
+      if (this.supportsFilter) s.filter = 'none';
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(s.canvas, 0, 0, sw, sh, 0, 0, W, H);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)'; // un velo leggero stacca il primo piano dallo sfondo
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
   }
 
   /** Elabora una volta l'aspetto statico del clip in un canvas della dimensione a schermo. */

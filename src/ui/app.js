@@ -27,6 +27,7 @@ import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export
 import { Teleprompter } from './teleprompter.js';
 import { openProjectsDialog } from './projects-dialog.js';
 import { saveCurrentAsTemplate } from './templates-panel.js';
+import { layoutClips } from '../core/layouts.js';
 import { applyTemplate, parseTemplateFile, serializeTemplate, templateFromProject } from '../core/templates.js';
 import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
@@ -991,6 +992,21 @@ export class App {
         if (!plan) return toast('Non si possono spostare così: uscirebbero dalla timeline', { type: 'warn' });
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
+      },
+      /** Sistema i clip selezionati in una disposizione (schermo diviso, immagine nell'immagine). */
+      applyLayout(layoutId, { fill = 'cover' } = {}) {
+        const ids = app.selection.ids.filter((id) => findClip(app.store.project, id));
+        if (!ids.length) return toast('Seleziona prima i clip da disporre (Ctrl o Maiusc + clic per più clip)', { type: 'warn' });
+        const r = app.commit('Disposizione', (d) => layoutClips(d, ids, layoutId, { fill }));
+        if (r.ok) app.player.settle?.();
+      },
+      /** Mette lo stesso tipo di sfondo dietro tutti i video e le foto del progetto. */
+      setBackdropAll(mode) {
+        const ids = allClips(app.store.project).filter((c) => c.kind === 'video' || c.kind === 'image').map((c) => c.id);
+        if (!ids.length) return toast('Non ci sono video o foto', { type: 'warn' });
+        app.commit('Sfondo dei clip', (d) => {
+          for (const id of ids) findClip(d, id).clip.backdrop.mode = mode;
+        });
       },
       /** Apre o chiude la finestra del teleprompter (copione che scorre da solo). */
       toggleTeleprompter() {
