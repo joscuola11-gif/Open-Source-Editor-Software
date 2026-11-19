@@ -820,3 +820,141 @@ test('libreria: tutti i pulsanti dei media restano dentro il pannello (vanno a c
     }
   });
 });
+
+// ---------------------------------------------------------------- transizioni
+/** Rosso (clip A) e blu (clip B) sulla stessa traccia, B con la transizione scelta. Restituisce i tempi utili. */
+async function twoClips(page, type, duration = 1) {
+  await importFiles(page, [m.f('red.webm'), m.f('blue.webm')]);
+  await addMedia(page, 0); // red
+  await page.evaluate(() => window.__ciak.player.seek(3.01));
+  await addMedia(page, 1); // blue, subito dopo
+  await page.waitForFunction(() => document.querySelectorAll('.clip').length === 2);
+  const info = await page.evaluate(({ type, duration }) => {
+    const a = window.__ciak;
+    const cs = a.store.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
+    a.selection.set([cs[1].id]);
+    a.actions.applyTransition(type, duration);
+    const [c0, c1] = a.store.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
+    return { start: c1.start, dur: c1.transition?.duration, end0: c0.start + c0.duration };
+  }, { type, duration });
+  assert.ok(info.dur > 0.9, `transizione applicata (${JSON.stringify(info)})`);
+  return info;
+}
+const isRed = ([r, g, b]) => r > 200 && g < 60 && b < 60;
+const isBlue = ([r, g, b]) => b > 200 && r < 60 && g < 60;
+
+test('transizioni: la spinta sposta davvero i due clip (rosso esce, blu entra), a metà è mezzo e mezzo', async () => {
+  for (const [type, red, blue] of [
+    ['push-left', [0.25, 0.5], [0.75, 0.5]],
+    ['push-right', [0.75, 0.5], [0.25, 0.5]],
+    ['push-up', [0.5, 0.25], [0.5, 0.75]],
+    ['push-down', [0.5, 0.75], [0.5, 0.25]],
+  ]) {
+    await withApp(async ({ page }) => {
+      const { start, dur } = await twoClips(page, type);
+      await seek(page, start - 0.2);
+      assert.ok(isRed(await pixel(page, 0.5, 0.5)), `${type}: prima è tutto rosso`);
+      await seek(page, start + dur / 2);
+      assert.ok(isRed(await pixel(page, ...red)), `${type}: a metà il rosso è nella sua metà`);
+      assert.ok(isBlue(await pixel(page, ...blue)), `${type}: a metà il blu è nella sua metà`);
+      await seek(page, start + dur + 0.2);
+      assert.ok(isBlue(await pixel(page, 0.5, 0.5)), `${type}: alla fine è tutto blu`);
+      assert.ok(isBlue(await pixel(page, 0.1, 0.1)) && isBlue(await pixel(page, 0.9, 0.9)), `${type}: blu fino agli angoli`);
+    });
+  }
+});
+
+test('transizioni: apertura dal centro, rombo, orologio, veneziane e scacchiera scoprono la forma giusta', async () => {
+  const cases = [
+    ['split-h', [[0.5, 0.5, 'b'], [0.1, 0.5, 'r'], [0.9, 0.5, 'r']]],
+    ['split-v', [[0.5, 0.5, 'b'], [0.5, 0.1, 'r'], [0.5, 0.9, 'r']]],
+    ['reveal-diamond', [[0.5, 0.5, 'b'], [0.05, 0.05, 'r'], [0.95, 0.95, 'r'], [0.05, 0.95, 'r']]],
+    ['clock', [[0.75, 0.5, 'b'], [0.25, 0.5, 'r']]],
+    ['wipe-from-left', [[0.25, 0.5, 'b'], [0.75, 0.5, 'r']]],
+    ['iris', [[0.5, 0.5, 'b'], [0.03, 0.03, 'r']]],
+    ['blinds-h', [[0.5, 0.25 / 8, 'b'], [0.5, 0.75 / 8, 'r'], [0.5, 4.25 / 8, 'b'], [0.5, 4.75 / 8, 'r']]],
+    ['blinds-v', [[0.25 / 10, 0.5, 'b'], [0.75 / 10, 0.5, 'r'], [5.25 / 10, 0.5, 'b']]],
+    ['checker', [[0.5 / 8, 0.5 / 5, 'b'], [1.5 / 8, 0.5 / 5, 'r'], [0.5 / 8, 1.5 / 5, 'r'], [1.5 / 8, 1.5 / 5, 'b']]],
+  ];
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm'), m.f('blue.webm')]);
+    await addMedia(page, 0);
+    await page.evaluate(() => window.__ciak.player.seek(3.01));
+    await addMedia(page, 1);
+    await page.waitForFunction(() => document.querySelectorAll('.clip').length === 2);
+    await page.evaluate(() => {
+      const a = window.__ciak;
+      const [, c1] = a.store.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
+      a.selection.set([c1.id]);
+    });
+    for (const [type, probes] of cases) {
+      const { start, dur } = await page.evaluate((type) => {
+        const a = window.__ciak;
+        a.actions.applyTransition(type, 1);
+        const [, c1] = a.store.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
+        return { start: c1.start, dur: c1.transition.duration };
+      }, type);
+      await seek(page, start + dur * 0.5);
+      for (const [x, y, want] of probes) {
+        const px = await pixel(page, x, y);
+        assert.ok(want === 'b' ? isBlue(px) : isRed(px), `${type} a metà in (${x.toFixed(2)}, ${y.toFixed(2)}) deve essere ${want === 'b' ? 'blu' : 'rosso'}: ${px}`);
+      }
+      await seek(page, start + dur + 0.15);
+      assert.ok(isBlue(await pixel(page, 0.5, 0.5)) && isBlue(await pixel(page, 0.03, 0.97)), `${type}: a fine transizione è tutto blu`);
+      await seek(page, start - 0.15);
+      assert.ok(isRed(await pixel(page, 0.5, 0.5)), `${type}: prima è tutto rosso`);
+    }
+  });
+});
+
+test('transizioni: ogni tipo si applica, si vede senza errori e a inizio/fine lascia solo l’uno o l’altro clip', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm'), m.f('blue.webm')]);
+    await addMedia(page, 0);
+    await page.evaluate(() => window.__ciak.player.seek(3.01));
+    await addMedia(page, 1);
+    await page.waitForFunction(() => document.querySelectorAll('.clip').length === 2);
+    const ids = await page.evaluate(() => {
+      const a = window.__ciak;
+      const [, c1] = a.store.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
+      a.selection.set([c1.id]);
+      return a.store.project.tracks.flatMap((t) => t.clips).length;
+    });
+    assert.equal(ids, 2);
+    const types = await page.evaluate(async () => (await import('/src/core/animations.js')).TRANSITION_IDS);
+    assert.ok(types.length >= 40);
+    for (const type of types) {
+      const { start, dur } = await page.evaluate((type) => {
+        window.__ciak.actions.applyTransition(type, 0.8);
+        const [, c1] = window.__ciak.store.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
+        return { start: c1.start, dur: c1.transition.duration };
+      }, type);
+      for (const q of [0.15, 0.5, 0.85]) {
+        await seek(page, start + dur * q);
+        await pixel(page, 0.5, 0.5);
+      }
+      await seek(page, start + dur + 0.2);
+      assert.ok(isBlue(await pixel(page, 0.5, 0.5)), `${type}: dopo la transizione solo il secondo clip`);
+      await seek(page, start - 0.2);
+      assert.ok(isRed(await pixel(page, 0.5, 0.5)), `${type}: prima della transizione solo il primo clip`);
+    }
+  });
+});
+
+test('transizioni: la libreria le mostra a gruppi e l’inspector le elenca per gruppo', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('red.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await openTab(page, 'transitions');
+    const groups = await page.locator('.lib-pane h4[data-group]').allTextContents();
+    for (const g of ['Dissolvenza', 'Sfocatura', 'Scorrimento', 'Spinta', 'Zoom', 'Tendine e divisione', 'Maschera', 'Grafiche']) assert.ok(groups.includes(g), `gruppo ${g}`);
+    assert.ok((await page.locator('[data-transition]').count()) >= 41, 'molte transizioni (+ «Nessuna»)');
+    await page.locator('[data-transition="push-left"]').click();
+    await inspectorTab(page, 'Animazione');
+    await page.waitForSelector('#sel-transition');
+    const opts = await page.evaluate(() => [...document.querySelectorAll('#sel-transition optgroup')].map((g) => g.label));
+    assert.ok(opts.includes('Spinta') && opts.includes('Maschera') && opts.includes('Grafiche'), `gruppi nell’inspector: ${opts}`);
+    assert.equal(await page.inputValue('#sel-transition'), 'push-left', 'la voce scelta è selezionata');
+  });
+});

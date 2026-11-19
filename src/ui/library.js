@@ -6,7 +6,7 @@ import { prefs } from './prefs.js';
 import { formatDuration, debounce } from '../core/util.js';
 import { findClip, allClips } from '../core/timeline.js';
 import { EFFECTS, EMOJI_GROUPS, FILTERS, SHAPES, TEXT_PRESETS } from '../core/presets.js';
-import { ANIMATIONS, TRANSITION_IDS } from '../core/animations.js';
+import { ANIMATIONS, transitionGroups } from '../core/animations.js';
 import { filterParamsFor } from '../engine/renderer.js';
 import { applyFilterParams, filterCss } from '../engine/pixel-fx.js';
 import { ACCEPT } from '../engine/media-import.js';
@@ -328,11 +328,15 @@ export class Library {
       out.textContent = `${(+dur.value).toFixed(1)} s`;
       prefs.set('transDur', +dur.value);
     });
-    const cards = [{ id: 'none', label: 'Nessuna' }, ...TRANSITION_IDS.map((id) => ({ id, label: ANIMATIONS[id].label }))];
+    const card = (c) => h('button', { class: 'card tr-card', type: 'button', 'data-transition': c.id, title: c.label, onClick: () => a.actions.applyTransition(c.id, +dur.value) }, icon(c.id === 'none' ? 'x' : 'transition', 24), h('span', { class: 'card-label' }, c.label));
     return h('div', { class: 'lib-pane' },
-      h('p', { class: 'hint' }, 'Seleziona un clip: la transizione si applica al suo inizio. Se segue un altro clip si crea una dissolvenza incrociata reale.'),
+      h('p', { class: 'hint' }, 'Seleziona un clip: la transizione si applica al suo inizio. Se segue un altro clip si crea una sovrapposizione reale (dissolvenza incrociata, spinta, tendina…).'),
       h('div', { class: 'ctl slider' }, h('label', { class: 'ctl-label' }, 'Durata'), dur, out),
-      h('div', { class: 'card-grid cols-3' }, cards.map((c) => h('button', { class: 'card tr-card', type: 'button', 'data-transition': c.id, title: c.label, onClick: () => a.actions.applyTransition(c.id, +dur.value) }, icon(c.id === 'none' ? 'x' : 'transition', 24), h('span', { class: 'card-label' }, c.label)))),
+      h('div', { class: 'card-grid cols-3' }, card({ id: 'none', label: 'Nessuna' })),
+      transitionGroups().map((g) => [
+        h('h4', { class: 'lib-h', 'data-group': g.label }, g.label),
+        h('div', { class: 'card-grid cols-3' }, g.ids.map((id) => card({ id, label: ANIMATIONS[id].label }))),
+      ]),
     );
   }
 

@@ -8,7 +8,7 @@ import { actionButton, colorPicker, section, segmented, selectControl, slider, t
 import { clamp, formatBytes, formatDuration } from '../core/util.js';
 import { allClips, findClip, projectDuration, setSpeed, setTransition } from '../core/timeline.js';
 import { ASPECTS, BLEND_MODES, EFFECTS, FILTERS, FONTS, FPS_OPTIONS, MASKS, SHAPES, MAX_SPEED, MIN_SPEED, SPEED_PRESETS } from '../core/presets.js';
-import { ANIMATIONS, ENTER_EXIT_IDS, LOOPS, LOOP_IDS, TRANSITION_IDS } from '../core/animations.js';
+import { ANIMATIONS, ENTER_EXIT_IDS, LOOPS, LOOP_IDS, transitionGroups } from '../core/animations.js';
 import { EASING_LABELS, KEYFRAME_PROPS, removeKeyframeAt, setValueAt, valueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
@@ -503,7 +503,8 @@ export class Inspector {
     ], { open: !!clip.anim.loop }));
     if (isVisualKind(clip.kind)) {
       const sel = h('select', { 'aria-label': 'Tipo di transizione', id: 'sel-transition' },
-        [{ id: 'none', label: 'Nessuna' }, ...TRANSITION_IDS.map((id) => ({ id, label: ANIMATIONS[id].label }))].map((o) => h('option', { value: o.id }, o.label)));
+        h('option', { value: 'none' }, 'Nessuna'),
+        transitionGroups().map((g) => h('optgroup', { label: g.label }, g.ids.map((id) => h('option', { value: id }, ANIMATIONS[id].label)))));
       sel.addEventListener('change', () => this.app.actions.applyTransition(sel.value, clip.transition?.duration ?? prefs.get('transDur', 0.8)));
       this.#controls.push({ el: sel, sync: (c) => { if (c && document.activeElement !== sel) sel.value = c.transition?.type ?? 'none'; } });
       out.push(section('Transizione all’inizio del clip', [

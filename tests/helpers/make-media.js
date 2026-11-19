@@ -26,6 +26,9 @@ export function makeMedia() {
     run(['-f', 'lavfi', '-i', 'color=c=0x00ff00:s=640x360:r=30:d=3,drawbox=x=220:y=100:w=200:h=160:color=red:t=fill', ...vp8, '-an', f('green.webm')]);
   // immagine e video a toni medi (niente bianchi o neri pieni): servono per provare esposizione, curve e colori
   const MID = 'color=c=0x606060:s=640x360:r=30:d=3,drawbox=x=0:y=0:w=320:h=180:color=0x805030:t=fill,drawbox=x=320:y=180:w=320:h=180:color=0x305080:t=fill';
+  for (const [name, col] of [['red', 'red'], ['blue', 'blue']]) {
+    if (!existsSync(f(`${name}.webm`))) run(['-f', 'lavfi', '-i', `color=c=${col}:s=640x360:r=30:d=4`, ...vp8, '-an', f(`${name}.webm`)]);
+  }
   if (!existsSync(f('mid.webm'))) run(['-f', 'lavfi', '-i', MID, ...vp8, '-an', f('mid.webm')]);
   if (!existsSync(f('mid.png'))) run(['-f', 'lavfi', '-i', MID.replace('s=640x360', 's=800x600').replace(/x=320:y=180:w=320:h=180/, 'x=400:y=300:w=400:h=300').replace('w=320:h=180:color=0x805030', 'w=400:h=300:color=0x805030'), '-frames:v', '1', f('mid.png')]);
   // 5 s con voce (tono) e due pause: 1,0–2,5 s e 3,5–4,5 s

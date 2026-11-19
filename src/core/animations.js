@@ -17,6 +17,8 @@ const easeOutBounce = (t) => {
   return n1 * (t -= 2.625 / d1) * t + 0.984375;
 };
 
+const easeInOut = (t) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+
 /** Stato neutro: nessuna modifica. */
 export function neutralState() {
   return { alpha: 1, dx: 0, dy: 0, scale: 1, sx: 1, sy: 1, rotation: 0, blur: 0, reveal: null, overlay: null, chars: 1 };
@@ -126,7 +128,52 @@ export const ANIMATIONS = {
     },
     { transitionOnly: true },
   ),
+  // ---- transizioni con clip uscente ("partner"): il clip precedente si muove insieme a quello che entra ----
+  'cross-blur': mk('Sfuma e sfoca', (p, s) => { s.blur = (1 - p) * 28; s.alpha = p; }, { transitionOnly: true, partner: (p, s) => { s.blur = p * 28; } }),
+  'push-left': mk('Spingi a sinistra', (p, s) => { s.dx = 1 - easeInOut(p); }, { transitionOnly: true, partner: (p, s) => { s.dx = -easeInOut(p); } }),
+  'push-right': mk('Spingi a destra', (p, s) => { s.dx = -(1 - easeInOut(p)); }, { transitionOnly: true, partner: (p, s) => { s.dx = easeInOut(p); } }),
+  'push-up': mk('Spingi in alto', (p, s) => { s.dy = 1 - easeInOut(p); }, { transitionOnly: true, partner: (p, s) => { s.dy = -easeInOut(p); } }),
+  'push-down': mk('Spingi in basso', (p, s) => { s.dy = -(1 - easeInOut(p)); }, { transitionOnly: true, partner: (p, s) => { s.dy = easeInOut(p); } }),
+  'whip-left': mk('Scatto a sinistra', (p, s) => { s.dx = 1 - easeInOut(p); s.blur = Math.sin(Math.PI * p) * 30; }, { transitionOnly: true, partner: (p, s) => { s.dx = -easeInOut(p); s.blur = Math.sin(Math.PI * p) * 30; } }),
+  'whip-right': mk('Scatto a destra', (p, s) => { s.dx = -(1 - easeInOut(p)); s.blur = Math.sin(Math.PI * p) * 30; }, { transitionOnly: true, partner: (p, s) => { s.dx = easeInOut(p); s.blur = Math.sin(Math.PI * p) * 30; } }),
+  'zoom-through': mk('Zoom attraverso', (p, s) => { s.scale = 0.5 + 0.5 * easeInOut(p); s.alpha = p; }, { transitionOnly: true, partner: (p, s) => { s.scale = 1 + 1.4 * easeInOut(p); s.alpha = 1 - p; } }),
+  'zoom-blur': mk('Zoom sfocato', (p, s) => { s.scale = 1.5 - 0.5 * easeInOut(p); s.blur = (1 - p) * 20; s.alpha = p; }, { transitionOnly: true, partner: (p, s) => { s.blur = p * 20; } }),
+  'split-h': mk('Apertura dal centro (orizzontale)', (p, s) => { s.reveal = { shape: 'rect', dir: 'center-x', p: easeInOut(p) }; }, { transitionOnly: true }),
+  'split-v': mk('Apertura dal centro (verticale)', (p, s) => { s.reveal = { shape: 'rect', dir: 'center-y', p: easeInOut(p) }; }, { transitionOnly: true }),
+  'reveal-diamond': mk('Rombo', (p, s) => { s.reveal = { shape: 'diamond', p: easeInOut(p) }; }, { transitionOnly: true }),
+  'reveal-star': mk('Stella', (p, s) => { s.reveal = { shape: 'star', p: easeInOut(p) }; }, { transitionOnly: true }),
+  'reveal-heart': mk('Cuore', (p, s) => { s.reveal = { shape: 'heart', p: easeInOut(p) }; }, { transitionOnly: true }),
+  'reveal-rounded': mk('Rettangolo arrotondato', (p, s) => { s.reveal = { shape: 'rounded', p: easeInOut(p) }; }, { transitionOnly: true }),
+  clock: mk('Orologio', (p, s) => { s.reveal = { shape: 'clock', p }; }, { transitionOnly: true }),
+  'blinds-h': mk('Veneziana orizzontale', (p, s) => { s.reveal = { shape: 'blinds', dir: 'h', n: 8, p: easeInOut(p) }; }, { transitionOnly: true }),
+  'blinds-v': mk('Veneziana verticale', (p, s) => { s.reveal = { shape: 'blinds', dir: 'v', n: 10, p: easeInOut(p) }; }, { transitionOnly: true }),
+  checker: mk('Scacchiera', (p, s) => { s.reveal = { shape: 'cells', mode: 'checker', n: 8, p }; }, { transitionOnly: true }),
+  mosaic: mk('Mosaico casuale', (p, s) => { s.reveal = { shape: 'cells', mode: 'random', n: 12, p }; }, { transitionOnly: true }),
+  glitch: mk(
+    'Glitch',
+    (p, s) => {
+      const k = Math.floor(p * 14);
+      s.dx = Math.sin(k * 12.9898) * 0.06 * (1 - p);
+      s.alpha = p > 0.85 || k % 3 !== 1 ? 1 : 0.15;
+      if (p < 0.85 && k % 4 === 2) s.overlay = { color: '#ff2d6f', alpha: 0.25 };
+    },
+    { transitionOnly: true, partner: (p, s) => { const k = Math.floor(p * 14); s.dx = -Math.sin(k * 7.233) * 0.05 * p; } },
+  ),
 };
+
+// ---- gruppi di transizioni (per le schede dell'interfaccia) ----
+const GROUP_OF = {
+  fade: 'Dissolvenza', 'dip-black': 'Dissolvenza', 'dip-white': 'Dissolvenza',
+  blur: 'Sfocatura', 'cross-blur': 'Sfocatura',
+  'slide-from-left': 'Scorrimento', 'slide-from-right': 'Scorrimento', 'slide-from-top': 'Scorrimento', 'slide-from-bottom': 'Scorrimento',
+  'push-left': 'Spinta', 'push-right': 'Spinta', 'push-up': 'Spinta', 'push-down': 'Spinta', 'whip-left': 'Spinta', 'whip-right': 'Spinta',
+  'zoom-in': 'Zoom', 'zoom-out': 'Zoom', 'zoom-through': 'Zoom', 'zoom-blur': 'Zoom',
+  'wipe-from-left': 'Tendine e divisione', 'wipe-from-right': 'Tendine e divisione', 'wipe-from-top': 'Tendine e divisione', 'wipe-from-bottom': 'Tendine e divisione', 'split-h': 'Tendine e divisione', 'split-v': 'Tendine e divisione',
+  iris: 'Maschera', 'reveal-diamond': 'Maschera', 'reveal-star': 'Maschera', 'reveal-heart': 'Maschera', 'reveal-rounded': 'Maschera', clock: 'Maschera',
+  'blinds-h': 'Grafiche', 'blinds-v': 'Grafiche', checker: 'Grafiche', mosaic: 'Grafiche', glitch: 'Grafiche',
+};
+for (const [id, a] of Object.entries(ANIMATIONS)) a.group = a.textOnly ? 'Testo' : GROUP_OF[id] ?? 'Altre';
+export const TRANSITION_GROUP_ORDER = ['Dissolvenza', 'Sfocatura', 'Scorrimento', 'Spinta', 'Zoom', 'Tendine e divisione', 'Maschera', 'Grafiche', 'Altre'];
 
 // ---- animazioni cicliche: durano per tutto il clip e si ripetono (`speed` = cicli al secondo, `amount` = intensità 0..100) ----
 const TAU = Math.PI * 2;
@@ -161,6 +208,11 @@ export const ANIMATION_IDS = Object.keys(ANIMATIONS);
 export const TRANSITION_IDS = ANIMATION_IDS.filter((id) => !ANIMATIONS[id].textOnly);
 export const ENTER_EXIT_IDS = ANIMATION_IDS.filter((id) => !ANIMATIONS[id].transitionOnly);
 
+/** Transizioni divise per gruppo, nell'ordine in cui si mostrano: [{label, ids}] */
+export function transitionGroups() {
+  return TRANSITION_GROUP_ORDER.map((label) => ({ label, ids: TRANSITION_IDS.filter((id) => ANIMATIONS[id].group === label) })).filter((g) => g.ids.length);
+}
+
 /** Calcola lo stato di animazione per presenza `p` (0..1). Scrive in `out` se fornito. */
 export function animationState(type, p, out = neutralState()) {
   const a = ANIMATIONS[type];
@@ -173,7 +225,7 @@ export function animationState(type, p, out = neutralState()) {
  * Stato combinato di ingresso/uscita/transizione di un clip al tempo locale `local`.
  * Restituisce neutralState() quando nessuna animazione è attiva.
  */
-export function clipAnimationState(clip, local) {
+export function clipAnimationState(clip, local, next = null) {
   const s = neutralState();
   const d = clip.duration;
   const tr = clip.transition;
@@ -183,6 +235,17 @@ export function clipAnimationState(clip, local) {
   const ao = clip.anim?.out;
   if (ao && ao.duration > 0 && local > d - ao.duration) combine(s, animationState(ao.type, (d - local) / ao.duration));
   if (clip.anim?.loop) combine(s, loopState(clip.anim.loop, local));
+  // il clip che segue ha una transizione che si sovrappone alla mia coda: alcune transizioni muovono anche me
+  const nt = next?.transition;
+  if (nt && nt.duration > 0) {
+    const q = (clip.start + local - next.start) / nt.duration;
+    const partner = ANIMATIONS[nt.type]?.partner;
+    if (partner && q >= 0 && q < 1) {
+      const ps = neutralState();
+      partner(q, ps);
+      combine(s, ps);
+    }
+  }
   return s;
 }
 

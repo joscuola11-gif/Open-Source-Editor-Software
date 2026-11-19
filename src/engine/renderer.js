@@ -13,6 +13,7 @@
 import { clamp, hexToRgb } from '../core/util.js';
 import { valueAt } from '../core/keyframes.js';
 import { clipAnimationState } from '../core/animations.js';
+import { revealShapes } from '../core/reveal.js';
 import { BLEND_MODES, FILTERS } from '../core/presets.js';
 import { isActiveAt } from '../core/timeline.js';
 import { applyGrade, decodeLut, gradeIsIdentity } from '../core/grade.js';
@@ -184,10 +185,11 @@ export class Renderer {
     for (let ti = p.tracks.length - 1; ti >= 0; ti--) {
       const track = p.tracks[ti];
       if (track.type !== 'video' || track.hidden) continue;
-      for (const clip of track.clips) {
+      for (let ci = 0; ci < track.clips.length; ci++) {
+        const clip = track.clips[ci];
         if (!isActiveAt(clip, t)) continue;
         try {
-          this.#drawClip(ctx, p, clip, t, W, H);
+          this.#drawClip(ctx, p, clip, t, W, H, track.clips[ci + 1] ?? null);
         } catch (e) {
           if (!this.#warned.has(clip.id)) {
             this.#warned.add(clip.id);
@@ -274,9 +276,9 @@ export class Renderer {
   // Disegno di un clip
   // ---------------------------------------------------------------------------
 
-  #drawClip(ctx, p, clip, t, W, H) {
+  #drawClip(ctx, p, clip, t, W, H, next = null) {
     const local = t - clip.start;
-    const an = clipAnimationState(clip, local);
+    const an = clipAnimationState(clip, local, next);
     const fps = p.settings.fps;
     const frame = Math.floor(t * fps + 1e-6);
     const tf = clip.transform;
@@ -552,17 +554,22 @@ export class Renderer {
   // ---------------------------------------------------------------------------
 
   #clipReveal(c, rv, box) {
-    const { w, h, ox, oy } = box;
-    const x0 = ox - w / 2;
-    const y0 = oy - h / 2;
-    c.beginPath();
-    const p = clamp(rv.p, 0, 1);
-    if (rv.shape === 'circle') c.arc(ox, oy, p * Math.hypot(w, h) * 0.5, 0, TAU);
-    else if (rv.dir === 'left') c.rect(x0, y0, w * p, h);
-    else if (rv.dir === 'right') c.rect(x0 + w * (1 - p), y0, w * p, h);
-    else if (rv.dir === 'top') c.rect(x0, y0, w, h * p);
-    else c.rect(x0, y0 + h * (1 - p), w, h * p);
-    c.clip();
+    if (rv.p >= 0.999) return; // tutto scoperto: nessun ritaglio
+    const path = new Path2D();
+    for (const sh of revealShapes(rv, box.w, box.h)) {
+      if (sh.k === 'rect') path.rect(box.ox + sh.x, box.oy + sh.y, sh.w, sh.h);
+      else if (sh.k === 'circle') {
+        path.moveTo(box.ox + sh.cx + sh.r, box.oy + sh.cy);
+        path.arc(box.ox + sh.cx, box.oy + sh.cy, sh.r, 0, TAU);
+      } else if (sh.k === 'rrect') {
+        if (path.roundRect) path.roundRect(box.ox + sh.x, box.oy + sh.y, sh.w, sh.h, sh.r);
+        else path.rect(box.ox + sh.x, box.oy + sh.y, sh.w, sh.h);
+      } else {
+        sh.pts.forEach(([x, y], k) => (k === 0 ? path.moveTo(box.ox + x, box.oy + y) : path.lineTo(box.ox + x, box.oy + y)));
+        path.closePath();
+      }
+    }
+    c.clip(path); // senza forme (p = 0) il ritaglio è vuoto: il clip non si vede ancora
   }
 
   #clipMask(c, mask, box) {
