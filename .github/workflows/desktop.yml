@@ -1,0 +1,60 @@
+# Costruisce il programma desktop (installer) su macchine Windows/macOS/Linux vere.
+# Avvio manuale: scheda «Actions» → «Programma desktop» → «Run workflow». Gli installer compaiono negli «Artifacts».
+name: Programma desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist:win
+            flags: -c.win.signAndEditExecutable=true
+          - os: macos-latest
+            script: dist:mac
+            flags: ''
+          - os: ubuntu-latest
+            script: dist:linux
+            flags: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Unit test
+        run: npm test
+      # su Windows l'icona e i metadati dell'eseguibile vengono applicati da rcedit (nativo: nessun wine)
+      - name: Build
+        shell: bash
+        run: npm run ${{ matrix.script }} -- ${{ matrix.flags }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ciak-studio-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.zip
+            release/*.AppImage
+            release/*.dmg
+          if-no-files-found: error
+      - name: Allega alla release (solo per i tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.zip
+            release/*.AppImage

@@ -63,6 +63,24 @@ scorciatoie chiamano le stesse funzioni. Nessun componente tiene copia dello sta
 il DOM per chiave (`id` del clip) e l'inspector aggiorna i valori dei controlli senza ricostruirli, così non
 si perde il focus durante un trascinamento.
 
+## desktop — il programma per Windows/macOS/Linux
+
+`desktop/main.cjs` mostra `dist/ciak-studio.html` in una finestra Electron. La pagina è la stessa della versione
+browser; il guscio aggiunge solo ciò che un browser non può fare.
+
+- **Sicurezza**: `contextIsolation` e `sandbox` attivi, nessun accesso a Node dalla pagina, navigazione esterna e
+  `window.open` bloccati, permessi concessi solo alla nostra pagina (microfono per il voice-over, schermo intero),
+  Content-Security-Policy che vieta qualsiasi connessione di rete, strumenti sviluppatore (F12) solo da sviluppo.
+- **Ponte minimo** (`preload.cjs`): espone `window.ciakDesktop` con sole 5 funzioni, tutte relative alla
+  conversione in MP4. Ogni chiamata IPC verifica che il mittente sia la nostra pagina.
+- **MP4**: il registratore del browser produce WebM VP9; `ffmpeg` (incluso in `resources/ffmpeg`) lo converte in H.264
+  `yuv420p` a gamma limitata BT.709 con frequenza costante e `faststart`. Il file è scritto come `.part` e rinominato
+  solo a conversione riuscita; la destinazione la sceglie l'utente con la finestra di sistema.
+- **Robustezza**: istanza singola, memoria di posizione/dimensione, conferma se si chiude durante un'esportazione,
+  recupero da crash del processo di rendering (il progetto è salvato in automatico).
+- **Build**: `npm run dist:win` (electron-builder). Da Linux si ottiene lo zip portatile; l'installer NSIS richiede
+  Windows o wine, perciò c'è un workflow GitHub Actions (`.github/workflows/desktop.yml`).
+
 ## Test
 
 | Livello | Dove | Cosa dimostra |
@@ -70,6 +88,7 @@ si perde il focus durante un trascinamento.
 | Unitari | `tests/unit` | Operazioni di timeline, keyframe, formati, pixel, audio |
 | Fuzzing | `tests/unit/fuzz.test.js` | Sequenze casuali di operazioni: progetto sempre valido, undo/redo esatti |
 | E2E | `tests/e2e` | Chromium reale: import, riproduzione sincronizzata, interazione col mouse, pixel dell'anteprima, esportazione verificata con ffprobe/ffmpeg, ripristino, pacchetto `.ciak` verificato con un lettore ZIP esterno |
+| Desktop | `tests/desktop` | Electron reale (e impacchettato) in schermo virtuale: sicurezza, MP4 verificato con ffprobe e colori, persistenza |
 | Prestazioni | `tests/bench.js` | Tempi di logica e rendering (non asserisce: dipende dall'hardware) |
 
 Per aggiungere una funzione: modifica il modello in `core` con il suo test; se tocca la timeline, il fuzzer la

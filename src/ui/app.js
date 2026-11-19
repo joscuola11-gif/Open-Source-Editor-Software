@@ -1026,6 +1026,13 @@ export class App {
     const sizeSel = h('select', { id: 'exp-size', 'aria-label': 'Risoluzione' }, sizes.map((s) => { const d = exportSize(p.settings, s); return h('option', { value: s }, `${s}p · ${d.width}×${d.height}`); }));
     sizeSel.value = String(sizes.includes(1080) ? 1080 : sizes.at(-1));
     const fmtSel = h('select', { id: 'exp-format', 'aria-label': 'Formato' }, availableFormats().map((f) => h('option', { value: f }, FORMATS[f].label)));
+    // Programma desktop: ffmpeg incluso → MP4 vero (H.264/AAC). Il registratore produce WebM, poi viene convertito.
+    const desktop = globalThis.ciakDesktop?.isDesktop ? globalThis.ciakDesktop : null;
+    desktop?.mp4Available().then((ok) => {
+      if (!ok) return;
+      fmtSel.prepend(h('option', { value: 'mp4-ffmpeg' }, 'MP4 (H.264/AAC) · consigliato'));
+      fmtSel.value = 'mp4-ffmpeg';
+    }).catch(() => {});
     const qSel = h('select', { id: 'exp-quality', 'aria-label': 'Qualità' }, Object.entries(QUALITY).map(([id, q]) => h('option', { value: id }, q.label)));
     qSel.value = 'high';
     const nameIn = h('input', { type: 'text', class: 'text-input', id: 'exp-name', value: p.name, 'aria-label': 'Nome del file', maxlength: 100 });
@@ -1046,32 +1053,88 @@ export class App {
     const secondary = h('div', { class: 'btn-row wrap' },
       h('button', { class: 'btn small', type: 'button', id: 'btn-export-png', onClick: () => this.#exportFrame(+sizeSel.value, nameIn.value) }, icon('image', 14), 'Salva fotogramma (PNG)'),
       h('button', { class: 'btn small', type: 'button', onClick: () => this.actions.exportSrt() }, icon('captions', 14), 'Esporta sottotitoli (.srt)'));
+    const warnings = (res) => {
+      const out = [];
+      const missed = res.expectedFrames - res.frames;
+      if (res.hiddenDuringExport) out.push('La scheda è stata nascosta durante l’esportazione: il video potrebbe avere scatti.');
+      if (missed > Math.max(3, res.expectedFrames * 0.04)) out.push(`Il computer non ha tenuto il passo: ${res.frames} fotogrammi su ${res.expectedFrames}. Riprova con una risoluzione inferiore.`);
+      return out;
+    };
+    const baseName = () => (nameIn.value.trim() || 'video').replace(/[\\/:*?"<>|]+/g, '_');
+    /** Converte il WebM registrato in MP4 con ffmpeg e lo fa salvare dall'utente. */
+    const convertToMp4 = async (res) => {
+      status.textContent = 'Fase 2/2 · conversione in MP4…';
+      progress.hidden = false;
+      progress.value = 0.7;
+      ctl.setActions([{ label: 'Annulla conversione', danger: true, id: 'cancel', onClick: () => { desktop.cancelConvert(); return false; } }]);
+      const off = desktop.onConvertProgress((v) => {
+        progress.value = 0.7 + 0.3 * v;
+        status.textContent = `Fase 2/2 · conversione in MP4… ${Math.round(v * 100)}%`;
+      });
+      try {
+        return await desktop.convertToMp4(await res.blob.arrayBuffer(), { name: baseName(), duration: dur, fps: p.settings.fps, quality: qSel.value });
+      } finally {
+        off();
+      }
+    };
+    const showResult = (res, conv) => {
+      progress.hidden = true;
+      status.textContent = '';
+      const file = conv?.ok ? conv.path.split(/[\\/]/).pop() : `${baseName()}.${res.ext}`;
+      const kids = [];
+      if (conv?.ok) {
+        kids.push(
+          h('p', { class: 'ok' }, icon('check', 16), ` Video MP4 salvato: ${file}`),
+          h('p', { class: 'hint', id: 'exp-saved-path' }, `${conv.path} · ${res.width}×${res.height} · ${formatBytes(conv.bytes)} · ${res.frames}/${res.expectedFrames} fotogrammi`),
+        );
+      } else if (conv) {
+        kids.push(
+          h('p', { class: 'warn' }, conv.canceled ? 'Salvataggio MP4 annullato.' : `Conversione in MP4 non riuscita: ${conv.error}`),
+          h('p', { class: 'hint' }, 'Il video registrato è ancora disponibile: puoi riprovare oppure salvarlo così com’è (WebM).'),
+        );
+      } else {
+        kids.push(
+          h('p', { class: 'ok' }, icon('check', 16), ` Esportazione completata: ${file}`),
+          h('p', { class: 'hint' }, `${res.width}×${res.height} · ${res.mime.split(';')[0]} · ${formatBytes(res.blob.size)} · ${res.frames}/${res.expectedFrames} fotogrammi · ${res.seconds.toFixed(1)} s`),
+        );
+      }
+      kids.push(...warnings(res).map((w) => h('p', { class: 'warn' }, w)));
+      const buttons = [];
+      if (conv?.ok) buttons.push(h('button', { class: 'btn', type: 'button', id: 'btn-reveal', onClick: () => desktop.showInFolder(conv.path) }, icon('folder', 14), 'Mostra nella cartella'));
+      else if (conv) {
+        buttons.push(
+          h('button', { class: 'btn primary', type: 'button', id: 'btn-retry-mp4', onClick: async () => { const again = await convertToMp4(res); showResult(res, again); } }, icon('download', 14), 'Salva come MP4'),
+          h('button', { class: 'btn', type: 'button', onClick: () => downloadBlob(res.blob, `${baseName()}.${res.ext}`) }, 'Salva il WebM originale'),
+        );
+      } else buttons.push(h('button', { class: 'btn', type: 'button', onClick: () => downloadBlob(res.blob, file) }, icon('download', 14), 'Scarica di nuovo'));
+      clearChildren(result).append(...kids, h('div', { class: 'btn-row wrap' }, ...buttons));
+      result.hidden = false;
+      ctl.setActions([{ label: 'Chiudi', primary: true, id: 'close' }]);
+      this.lastExport = { ...res, file, converted: conv ?? null };
+    };
     const startBtn = { label: 'Avvia esportazione', primary: true, id: 'start', onClick: async () => {
       form.hidden = true;
       secondary.hidden = true;
       progress.hidden = false;
+      progress.value = 0;
       result.hidden = true;
-      status.textContent = 'Esportazione in corso… non cambiare scheda.';
+      const mp4 = fmtSel.value === 'mp4-ffmpeg' && !!desktop;
+      status.textContent = mp4 ? 'Fase 1/2 · registrazione… non nascondere la finestra.' : 'Esportazione in corso… non cambiare scheda.';
       ctl.setActions([{ label: 'Annulla', danger: true, id: 'cancel', onClick: () => { exporter.cancel(); return false; } }]);
+      // se si converte, la registrazione intermedia usa una qualità più alta per non degradare due volte
+      const interQuality = mp4 ? { low: 'medium', medium: 'high', high: 'ultra', ultra: 'ultra' }[qSel.value] : qSel.value;
       try {
-        const res = await exporter.run({ shortSide: +sizeSel.value, format: fmtSel.value, quality: qSel.value, onProgress: (v) => { progress.value = v; status.textContent = `Esportazione… ${Math.round(v * 100)}%`; } });
-        const file = `${(nameIn.value.trim() || 'video').replace(/[\\/:*?"<>|]+/g, '_')}.${res.ext}`;
-        downloadBlob(res.blob, file);
-        const missed = res.expectedFrames - res.frames;
-        const warn = [];
-        if (res.hiddenDuringExport) warn.push('La scheda è stata nascosta durante l’esportazione: il video potrebbe avere scatti.');
-        if (missed > Math.max(3, res.expectedFrames * 0.04)) warn.push(`Il computer non ha tenuto il passo: ${res.frames} fotogrammi su ${res.expectedFrames}. Riprova con una risoluzione inferiore.`);
-        progress.hidden = true;
-        status.textContent = '';
-        clearChildren(result).append(
-          h('p', { class: 'ok' }, icon('check', 16), ` Esportazione completata: ${file}`),
-          h('p', { class: 'hint' }, `${res.width}×${res.height} · ${res.mime.split(';')[0]} · ${formatBytes(res.blob.size)} · ${res.frames}/${res.expectedFrames} fotogrammi · ${res.seconds.toFixed(1)} s`),
-          ...warn.map((w) => h('p', { class: 'warn' }, w)),
-          h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', onClick: () => downloadBlob(res.blob, file) }, icon('download', 14), 'Scarica di nuovo')),
-        );
-        result.hidden = false;
-        ctl.setActions([{ label: 'Chiudi', primary: true, id: 'close' }]);
-        this.lastExport = { ...res, file };
+        const res = await exporter.run({
+          shortSide: +sizeSel.value, format: mp4 ? 'webm' : fmtSel.value, quality: interQuality,
+          onProgress: (v) => { progress.value = mp4 ? v * 0.7 : v; status.textContent = `${mp4 ? 'Fase 1/2 · registrazione' : 'Esportazione'}… ${Math.round(v * 100)}%`; },
+        });
+        if (mp4) {
+          const conv = await convertToMp4(res);
+          showResult(res, conv);
+        } else {
+          downloadBlob(res.blob, `${baseName()}.${res.ext}`);
+          showResult(res, null);
+        }
       } catch (e) {
         progress.hidden = true;
         status.textContent = '';
