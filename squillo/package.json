@@ -1,0 +1,31 @@
+{
+  "name": "squillo",
+  "version": "0.1.0",
+  "description": "Squillo — videochiamate 1 a 1 con condivisione dello schermo, per computer e telefono",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "build": "node tools/build.js",
+    "serve": "node tools/serve.js",
+    "centralino": "node server/centralino.js",
+    "test": "node --test \"tests/unit/*.test.js\"",
+    "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/*.test.js\"",
+    "desktop": "npm run build && electron .",
+    "test:desktop": "xvfb-run -a node --test --test-concurrency=1 \"tests/desktop/*.test.js\"",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:mac": "npm run build && electron-builder --mac"
+  },
+  "dependencies": {
+    "peerjs": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.25.0",
+    "peer": "^1.0.2",
+    "playwright": "1.63.0"
+  }
+}
