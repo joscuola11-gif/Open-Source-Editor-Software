@@ -19,6 +19,18 @@ Riferimento: `docs/capcut-catalogo-funzioni.txt` (numeri delle voci). Aggiornato
 | 207, 253 | Rimozione di pause e silenzi dall'inviluppo audio, con anteprima del conteggio | `core/silence.js` |
 | 183 | Modelli di testo pronti: da 8 a 23 (terzo inferiore, cinema, fumetto, citazione, pillola, neon, fuoco…) | `core/presets.js` |
 | 187, 84 | Animazioni cicliche per tutto il clip (pulsa, battito, fluttua, dondola, ondeggia, trema, lampeggia, respira, gira) | `core/animations.js` |
+| 231 | Altezza del suono (±12 semitoni) senza cambiare la velocità (vocoder di fase) | `core/audio-fx.js` |
+| 234 | Normalizza il volume del clip a un livello (RMS con soglia, tetto sui picchi) | azione `normalizeClip` |
+| 235, 236 | Riduzione del rumore di fondo (sottrazione spettrale) e «voce più chiara» | `core/audio-fx.js` |
+| 238, 239 | Togli la voce da un brano stereo; isola la voce (approssimata) | idem |
+| 240, 241 | Effetti voce: grave, acuta, scoiattolo, mostro, robot, telefono, megafono, eco, caverna | idem |
+| 232, 233, 104, 248 | Rilevamento di tempo e battiti, marcatori «Battito», tagli a tempo di musica (ogni 1/2/4/8 battiti) | `core/beats.js` |
+| 384, 386 | Esportazione di solo audio WAV (mixaggio a freddo: volume, keyframe, dissolvenze, crossfade, velocità) | `core/mixdown.js` |
+| 385 | MP3 192 kbit/s nel browser e nel programma desktop (codificatore incluso) | `engine/audio-export.js` |
+| 387 | FLAC (programma desktop, ffmpeg incluso) | `desktop/main.cjs` |
+| 384 | M4A/AAC (programma desktop) | idem |
+| 381 | MOV H.264/AAC (programma desktop) | idem |
+| 394 | GIF animata (12 fps, lato corto fino a 480 px, fotogramma per fotogramma) | `engine/audio-export.js` |
 
 ## Già presenti prima (verificate nel codice)
 Ribalta orizzontale e verticale (64-65), ritaglio con cursori (61), colore dello sfondo del canvas, estrai audio (218-219),

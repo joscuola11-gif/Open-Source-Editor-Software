@@ -1275,6 +1275,9 @@ export class App {
     desktop?.mp4Available().then((ok) => {
       if (!ok) return;
       fmtSel.prepend(h('option', { value: 'mp4-ffmpeg' }, 'MP4 (H.264/AAC) · consigliato'));
+      fmtSel.children[0].after(h('option', { value: 'mov-ffmpeg' }, 'MOV (H.264/AAC) · per altri programmi di montaggio'));
+      const audioGroup = fmtSel.querySelector('optgroup[label="Solo audio"]');
+      audioGroup?.append(h('option', { value: 'flac-ffmpeg' }, 'Audio FLAC (senza perdite, compresso)'), h('option', { value: 'm4a-ffmpeg' }, 'Audio M4A (AAC 256 kbit/s)'));
       fmtSel.value = 'mp4-ffmpeg';
     }).catch(() => {});
     const qSel = h('select', { id: 'exp-quality', 'aria-label': 'Qualità' }, Object.entries(QUALITY).map(([id, q]) => h('option', { value: id }, q.label)));
@@ -1297,9 +1300,9 @@ export class App {
     const form = h('div', { class: 'exp-form' }, row('Nome file', nameIn), sizeRow, row('Formato', fmtSel), qualRow, est);
     // altri formati: solo audio (WAV/MP3) e GIF animata, anche senza il programma desktop
     fmtSel.append(h('optgroup', { label: 'Solo audio' }, h('option', { value: 'wav' }, 'Audio WAV (senza perdite)'), h('option', { value: 'mp3' }, 'Audio MP3 (192 kbit/s)')), h('optgroup', { label: 'Immagine animata' }, h('option', { value: 'gif' }, 'GIF animata (lato corto fino a 480 px, 12 fps)')));
-    const OTHER = ['wav', 'mp3', 'gif'];
+    const OTHER = ['wav', 'mp3', 'gif', 'flac-ffmpeg', 'm4a-ffmpeg'];
     const syncRows = () => {
-      const audioOnly = fmtSel.value === 'wav' || fmtSel.value === 'mp3';
+      const audioOnly = ['wav', 'mp3', 'flac-ffmpeg', 'm4a-ffmpeg'].includes(fmtSel.value);
       sizeRow.hidden = audioOnly;
       qualRow.hidden = OTHER.includes(fmtSel.value);
       if (OTHER.includes(fmtSel.value)) est.textContent = audioOnly ? `Durata ${formatDuration(dur, 1)} · l’audio si prepara in pochi secondi, senza riproduzione in tempo reale.` : `Durata ${formatDuration(dur, 1)} · la GIF si costruisce fotogramma per fotogramma (più il video è lungo, più ci vuole). Consigliata sotto i 15 secondi.`;
@@ -1319,17 +1322,18 @@ export class App {
     };
     const baseName = () => (nameIn.value.trim() || 'video').replace(/[\\/:*?"<>|]+/g, '_');
     /** Converte il WebM registrato in MP4 con ffmpeg e lo fa salvare dall'utente. */
+    let container = 'mp4';
     const convertToMp4 = async (res) => {
-      status.textContent = 'Fase 2/2 · conversione in MP4…';
+      status.textContent = `Fase 2/2 · conversione in ${container.toUpperCase()}…`;
       progress.hidden = false;
       progress.value = 0.7;
       ctl.setActions([{ label: 'Annulla conversione', danger: true, id: 'cancel', onClick: () => { desktop.cancelConvert(); return false; } }]);
       const off = desktop.onConvertProgress((v) => {
         progress.value = 0.7 + 0.3 * v;
-        status.textContent = `Fase 2/2 · conversione in MP4… ${Math.round(v * 100)}%`;
+        status.textContent = `Fase 2/2 · conversione in ${container.toUpperCase()}… ${Math.round(v * 100)}%`;
       });
       try {
-        return await desktop.convertToMp4(await res.blob.arrayBuffer(), { name: baseName(), duration: dur, fps: p.settings.fps, quality: qSel.value });
+        return await desktop.convertToMp4(await res.blob.arrayBuffer(), { name: baseName(), duration: dur, fps: p.settings.fps, quality: qSel.value, container });
       } finally {
         off();
       }
@@ -1341,7 +1345,7 @@ export class App {
       const kids = [];
       if (conv?.ok) {
         kids.push(
-          h('p', { class: 'ok' }, icon('check', 16), ` Video MP4 salvato: ${file}`),
+          h('p', { class: 'ok' }, icon('check', 16), ` Video ${container.toUpperCase()} salvato: ${file}`),
           h('p', { class: 'hint', id: 'exp-saved-path' }, `${conv.path} · ${res.width}×${res.height} · ${formatBytes(conv.bytes)} · ${res.frames}/${res.expectedFrames} fotogrammi`),
         );
       } else if (conv) {
@@ -1400,6 +1404,27 @@ export class App {
         } else {
           const mix = await renderProjectAudio(store.project, this.pool, (v) => { progress.value = v * 0.9; status.textContent = `Preparo l’audio… ${Math.round(v * 90)}%`; });
           if (cancelled) throw Object.assign(new Error('annullata'), { cancelled: true });
+          if (kind === 'flac-ffmpeg' || kind === 'm4a-ffmpeg') {
+            status.textContent = 'Converto con ffmpeg…';
+            progress.value = 0.93;
+            const k = kind.split('-')[0];
+            const conv = await desktop.convertAudio(encodeWav(mix.channels, mix.sampleRate), { kind: k, name: baseName() });
+            progress.hidden = true;
+            status.textContent = '';
+            if (!conv.ok) {
+              form.hidden = false;
+              secondary.hidden = false;
+              ctl.setActions([{ label: 'Chiudi', id: 'close' }, startBtn]);
+              if (conv.canceled) toast('Salvataggio annullato');
+              else toast(`Conversione non riuscita: ${conv.error}`, { type: 'error' });
+              return false;
+            }
+            clearChildren(result).append(h('p', { class: 'ok', id: 'exp-saved-path-audio' }, icon('check', 16), ` Audio ${k.toUpperCase()} salvato: ${conv.path.split(/[\\/]/).pop()}`), h('p', { class: 'hint', id: 'exp-saved-path' }, `${conv.path} · ${formatBytes(conv.bytes)}`), h('div', { class: 'btn-row wrap' }, h('button', { class: 'btn', type: 'button', onClick: () => desktop.showInFolder(conv.path) }, icon('folder', 14), 'Mostra nella cartella')));
+            result.hidden = false;
+            ctl.setActions([{ label: 'Chiudi', primary: true, id: 'close' }]);
+            this.lastExport = { file: conv.path, kind: k, converted: conv };
+            return false;
+          }
           status.textContent = kind === 'mp3' ? 'Codifico l’MP3…' : 'Scrivo il file WAV…';
           await new Promise((r) => setTimeout(r, 20));
           blob = kind === 'mp3' ? encodeMp3(mix.channels, mix.sampleRate, 192) : new Blob([encodeWav(mix.channels, mix.sampleRate)], { type: 'audio/wav' });
@@ -1431,7 +1456,8 @@ export class App {
       progress.hidden = false;
       progress.value = 0;
       result.hidden = true;
-      const mp4 = fmtSel.value === 'mp4-ffmpeg' && !!desktop;
+      const mp4 = (fmtSel.value === 'mp4-ffmpeg' || fmtSel.value === 'mov-ffmpeg') && !!desktop;
+      container = fmtSel.value === 'mov-ffmpeg' ? 'mov' : 'mp4';
       status.textContent = mp4 ? 'Fase 1/2 · registrazione… non nascondere la finestra.' : 'Esportazione in corso… non cambiare scheda.';
       ctl.setActions([{ label: 'Annulla', danger: true, id: 'cancel', onClick: () => { exporter.cancel(); return false; } }]);
       // se si converte, la registrazione intermedia usa una qualità più alta per non degradare due volte

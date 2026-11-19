@@ -260,13 +260,80 @@ function topLevelBoxes(file) {
   return boxes;
 }
 
+test('desktop: esporta solo audio in FLAC e M4A e il video in MOV tramite ffmpeg incluso', { skip }, async () => {
+  const outDir = tmp('ciak-aud-');
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg', CIAK_TEST_SAVE_DIR: outDir });
+  try {
+    await win.setInputFiles('#file-input', [m.f('tone.wav'), m.f('b.webm')]);
+    await win.waitForFunction(() => document.querySelectorAll('.media-card').length >= 2);
+    const add = async (i) => {
+      const card = win.locator('.media-card').nth(i);
+      await card.hover();
+      await card.locator('.add').click();
+    };
+    await add(0); // tone.wav, 3 s
+    await win.waitForSelector('.clip');
+
+    const exportAs = async (format, name) => {
+      await win.click('#btn-export');
+      await win.waitForFunction((f) => document.querySelector(`#exp-format option[value="${f}"]`), format, { timeout: 15000 });
+      await win.selectOption('#exp-format', format);
+      await win.fill('#exp-name', name);
+      await win.click('button[data-act="start"]');
+      await win.waitForSelector('#exp-saved-path', { timeout: 120000 });
+      await win.click('button[data-act="close"]').catch(() => {});
+      await win.waitForSelector('dialog.dialog[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+    };
+
+    await exportAs('flac-ffmpeg', 'brano');
+    const flac = path.join(outDir, 'brano.flac');
+    assert.ok(existsSync(flac), 'FLAC salvato col nome scelto');
+    const fi = ffprobe(flac);
+    assert.equal(fi.audio.codec_name, 'flac');
+    assert.equal(Number(fi.audio.channels), 2);
+    assert.ok(Math.abs(fi.duration - 3) < 0.15, `durata FLAC ${fi.duration}`);
+
+    await exportAs('m4a-ffmpeg', 'brano');
+    const m4a = path.join(outDir, 'brano.m4a');
+    assert.ok(existsSync(m4a), 'M4A salvato');
+    const mi = ffprobe(m4a);
+    assert.equal(mi.audio.codec_name, 'aac');
+    assert.ok(Math.abs(mi.duration - 3) < 0.2, `durata M4A ${mi.duration}`);
+    assert.equal(readdirSync(outDir).some((f) => f.endsWith('.part')), false, 'nessun file temporaneo rimasto');
+
+    // MOV: un video vero
+    await win.evaluate(() => window.__ciak.store.commit('prova', (p) => { for (const t of p.tracks) t.clips.length = 0; }));
+    await add(1);
+    await win.waitForSelector('.clip.kind-video');
+    await win.click('#btn-export');
+    await win.waitForFunction(() => document.querySelector('#exp-format option[value="mov-ffmpeg"]'), null, { timeout: 15000 });
+    await win.selectOption('#exp-format', 'mov-ffmpeg');
+    await win.selectOption('#exp-size', '480');
+    await win.fill('#exp-name', 'filmato');
+    await win.click('button[data-act="start"]');
+    await win.waitForSelector('#exp-saved-path', { timeout: 120000 });
+    const mov = path.join(outDir, 'filmato.mov');
+    assert.ok(existsSync(mov), 'MOV salvato');
+    const vi = ffprobe(mov);
+    assert.match(vi.format, /mov/);
+    assert.equal(vi.video.codec_name, 'h264');
+    assert.equal(vi.audio.codec_name, 'aac');
+    assert.equal(vi.video.height, 480);
+    const dec = spawnSync('ffmpeg', ['-v', 'error', '-i', mov, '-f', 'null', '-'], { encoding: 'utf8' });
+    assert.equal(dec.stderr.trim(), '', 'decodifica senza errori');
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('desktop: esporta in MP4 vero (H.264/AAC, frequenza costante, faststart) tramite ffmpeg incluso', { skip }, async () => {
   const outDir = tmp('ciak-mp4-');
   const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg', CIAK_TEST_SAVE_DIR: outDir });
   try {
     // il ponte espone solo ciò che serve e la pagina continua a non vedere Node
     const bridge = await win.evaluate(() => ({ keys: Object.keys(window.ciakDesktop).sort(), node: typeof require, proc: typeof process }));
-    assert.deepEqual(bridge.keys, ['cancelConvert', 'convertToMp4', 'isDesktop', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder']);
+    assert.deepEqual(bridge.keys, ['cancelConvert', 'convertAudio', 'convertToMp4', 'isDesktop', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder']);
     assert.equal(`${bridge.node}|${bridge.proc}`, 'undefined|undefined');
     // dati non validi e percorsi non autorizzati non fanno danni
     const bad = await win.evaluate(() => window.ciakDesktop.convertToMp4(new Uint8Array(10), {}));

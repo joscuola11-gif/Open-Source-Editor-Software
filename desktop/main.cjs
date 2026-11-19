@@ -118,21 +118,22 @@ ipcMain.handle('ciak:convert-mp4', async (event, input, options = {}) => {
 
   const win = BrowserWindow.fromWebContents(event.sender);
   const name = safeName(options.name);
+  const container = options.container === 'mov' ? 'mov' : 'mp4'; // MOV: stessa codifica H.264/AAC, contenitore QuickTime
   const fps = Math.min(120, Math.max(1, Math.round(Number(options.fps) || 30)));
   const duration = Number(options.duration) > 0 ? Number(options.duration) : 0;
   const crf = CRF[options.quality] ?? CRF.medium;
 
   // destinazione: scelta dall'utente (nei test automatici una cartella indicata da CIAK_TEST_SAVE_DIR)
   let dest;
-  if (!app.isPackaged && process.env.CIAK_TEST_SAVE_DIR) dest = path.join(process.env.CIAK_TEST_SAVE_DIR, `${name}.mp4`);
+  if (!app.isPackaged && process.env.CIAK_TEST_SAVE_DIR) dest = path.join(process.env.CIAK_TEST_SAVE_DIR, `${name}.${container}`);
   else {
     const r = await dialog.showSaveDialog(win, {
-      title: 'Salva il video MP4',
-      defaultPath: path.join(app.getPath('videos'), `${name}.mp4`),
-      filters: [{ name: 'Video MP4', extensions: ['mp4'] }],
+      title: container === 'mov' ? 'Salva il video MOV' : 'Salva il video MP4',
+      defaultPath: path.join(app.getPath('videos'), `${name}.${container}`),
+      filters: [{ name: container === 'mov' ? 'Video MOV' : 'Video MP4', extensions: [container] }],
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
-    dest = r.filePath.toLowerCase().endsWith('.mp4') ? r.filePath : `${r.filePath}.mp4`;
+    dest = r.filePath.toLowerCase().endsWith(`.${container}`) ? r.filePath : `${r.filePath}.${container}`;
   }
 
   const tmpIn = path.join(app.getPath('temp'), `ciak-in-${process.pid}-${Date.now()}.webm`);
@@ -153,7 +154,7 @@ ipcMain.handle('ciak:convert-mp4', async (event, input, options = {}) => {
       '-c:v', 'libx264', '-preset', 'fast', '-crf', String(crf), '-pix_fmt', 'yuv420p',
       '-c:a', 'aac', '-b:a', '192k',
       '-movflags', '+faststart', // l'indice all'inizio: il video parte subito anche online
-      '-f', 'mp4', tmpOut,
+      '-f', container, tmpOut,
     ];
     convertCancelled = false;
     const result = await new Promise((resolve) => {
@@ -191,6 +192,57 @@ ipcMain.handle('ciak:convert-mp4', async (event, input, options = {}) => {
   } finally {
     convertProc = null;
     cleanup();
+  }
+});
+
+// Audio già mixato dall'editor (WAV) → FLAC (senza perdite) o M4A/AAC con ffmpeg.
+const AUDIO_SPECS = {
+  flac: { ext: 'flac', title: 'Salva l’audio FLAC', label: 'Audio FLAC', args: ['-vn', '-c:a', 'flac', '-f', 'flac'] },
+  m4a: { ext: 'm4a', title: 'Salva l’audio M4A', label: 'Audio M4A (AAC)', args: ['-vn', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', '-f', 'ipod'] },
+};
+
+ipcMain.handle('ciak:convert-audio', async (event, input, options = {}) => {
+  assertOurs(event);
+  const spec = AUDIO_SPECS[options.kind];
+  if (!spec) return { ok: false, error: 'Formato audio non supportato.' };
+  const bin = ffmpegPath();
+  if (!bin) return { ok: false, error: 'ffmpeg non è disponibile in questa installazione.' };
+  if (convertProc) return { ok: false, error: 'Una conversione è già in corso.' };
+  const data = input instanceof ArrayBuffer ? Buffer.from(input) : ArrayBuffer.isView(input) ? Buffer.from(input.buffer, input.byteOffset, input.byteLength) : null;
+  if (!data || data.length < 100) return { ok: false, error: 'Dati audio non validi.' };
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const name = safeName(options.name);
+  let dest;
+  if (!app.isPackaged && process.env.CIAK_TEST_SAVE_DIR) dest = path.join(process.env.CIAK_TEST_SAVE_DIR, `${name}.${spec.ext}`);
+  else {
+    const r = await dialog.showSaveDialog(win, { title: spec.title, defaultPath: path.join(app.getPath('music'), `${name}.${spec.ext}`), filters: [{ name: spec.label, extensions: [spec.ext] }] });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    dest = r.filePath.toLowerCase().endsWith(`.${spec.ext}`) ? r.filePath : `${r.filePath}.${spec.ext}`;
+  }
+  const tmpIn = path.join(app.getPath('temp'), `ciak-in-${process.pid}-${Date.now()}.wav`);
+  const tmpOut = `${dest}.part`;
+  try {
+    fs.writeFileSync(tmpIn, data);
+    convertCancelled = false;
+    const result = await new Promise((resolve) => {
+      const proc = spawn(bin, ['-y', '-hide_banner', '-loglevel', 'error', '-i', tmpIn, ...spec.args, tmpOut], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+      convertProc = proc;
+      let err = '';
+      proc.stderr.on('data', (c) => {
+        err = (err + c).slice(-2000);
+      });
+      proc.on('error', (e) => resolve({ ok: false, error: `Impossibile avviare ffmpeg: ${e.message}` }));
+      proc.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: convertCancelled ? 'Conversione annullata.' : `ffmpeg ha terminato con errore ${code}. ${err.trim().split('\n').slice(-2).join(' ')}` }));
+    });
+    if (!result.ok) return result;
+    fs.renameSync(tmpOut, dest);
+    savedFiles.add(dest);
+    return { ok: true, path: dest, bytes: fs.statSync(dest).size };
+  } catch (e) {
+    return { ok: false, error: `Conversione non riuscita: ${e.message}` };
+  } finally {
+    convertProc = null;
+    for (const f of [tmpIn, tmpOut]) fs.rm(f, { force: true }, () => {});
   }
 });
 
