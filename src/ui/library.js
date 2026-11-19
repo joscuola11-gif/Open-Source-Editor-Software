@@ -11,9 +11,11 @@ import { filterParamsFor } from '../engine/renderer.js';
 import { applyFilterParams, filterCss } from '../engine/pixel-fx.js';
 import { ACCEPT } from '../engine/media-import.js';
 import { createClip } from '../core/project.js';
+import { buildTemplatesTab } from './templates-panel.js';
 
 const TABS = [
   { id: 'media', label: 'Media', icon: 'folder' },
+  { id: 'templates', label: 'Modelli', icon: 'layout' },
   { id: 'text', label: 'Testo', icon: 'type' },
   { id: 'elements', label: 'Elementi', icon: 'smile' },
   { id: 'filters', label: 'Filtri', icon: 'sliders' },
@@ -101,7 +103,7 @@ export class Library {
     clear(this.body);
     this.#mediaSig = '';
     this.#filterThumbs = [];
-    const build = { media: () => this.#mediaTab(), text: () => this.#textTab(), elements: () => this.#elementsTab(), filters: () => this.#filtersTab(), effects: () => this.#effectsTab(), transitions: () => this.#transitionsTab(), subtitles: () => this.#subtitlesTab() }[id];
+    const build = { media: () => this.#mediaTab(), templates: () => buildTemplatesTab(this.app), text: () => this.#textTab(), elements: () => this.#elementsTab(), filters: () => this.#filtersTab(), effects: () => this.#effectsTab(), transitions: () => this.#transitionsTab(), subtitles: () => this.#subtitlesTab() }[id];
     this.body.append(build());
     this.#onSelection();
     if (id === 'filters') this.#paintFilterThumbs();

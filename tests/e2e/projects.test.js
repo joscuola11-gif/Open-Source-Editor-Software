@@ -208,3 +208,236 @@ test('archivio vecchio (versione 1): si aggiorna da solo, il progetto di lavoro 
     assert.equal(await page.locator('#proj-empty').count(), 1);
   });
 });
+
+// ---------------------------------------------------------------- modelli
+const openTemplatesTab = async (page) => {
+  await page.click('#tab-templates');
+  await page.waitForSelector('.tpl-card');
+};
+const canvasPainted = (page, selector) =>
+  page.waitForFunction((sel) => {
+    const cs = [...document.querySelectorAll(sel)];
+    return cs.length > 0 && cs.every((c) => {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let s = 0;
+      for (let i = 0; i < d.length; i += 16) s += d[i] + d[i + 1] + d[i + 2];
+      return s > 2000;
+    });
+  }, selector, { timeout: 15000 });
+const openCard = async (page, id) => {
+  await page.click(`.tpl-card[data-id="${id}"]`);
+  await page.waitForSelector('#template-dialog #tpl-canvas');
+};
+const slotIds = (page) => page.evaluate(() => [...document.querySelectorAll('#template-dialog .tpl-slot')].map((e) => e.dataset.slot));
+
+test('modelli: la scheda mostra tutti i modelli con miniature disegnate, filtri per categoria e ricerca', async () => {
+  await withApp(async ({ page }) => {
+    await openTemplatesTab(page);
+    const n = await page.locator('.tpl-card').count();
+    assert.ok(n >= 11, `modelli: ${n}`);
+    await canvasPainted(page, '.tpl-thumb');
+    // categorie
+    await page.click('.chip[data-cat="Social verticale"]');
+    const vert = await page.locator('.tpl-card').count();
+    assert.ok(vert >= 4 && vert < n, `verticali: ${vert}`);
+    assert.ok((await page.locator('.tpl-card').evaluateAll((els) => els.every((e) => e.dataset.cat === 'Social verticale'))));
+    await page.click('.chip[data-cat="Citazioni"]');
+    assert.equal(await page.locator('.tpl-card').count(), 1);
+    await page.click('.chip[data-cat="Tutti"]');
+    // ricerca
+    await page.fill('#tpl-search', 'griglia');
+    assert.equal(await page.locator('.tpl-card').count(), 1);
+    assert.match(await page.textContent('.tpl-name'), /Griglia/);
+    await page.fill('#tpl-search', 'xyz-non-esiste');
+    assert.equal(await page.locator('.tpl-card').count(), 0);
+    assert.match(await page.textContent('#tpl-count'), /Nessun modello/);
+    await page.fill('#tpl-search', '');
+    assert.equal(await page.locator('.tpl-card').count(), n);
+    // «I miei modelli» è vuoto e spiega come riempirlo
+    await page.click('.chip[data-cat="I miei modelli"]');
+    assert.match(await page.textContent('#tpl-count'), /Salva come modello/);
+  });
+});
+
+test('modelli: l’anteprima si muove, si mette in pausa e cambia quando scegli i tuoi file e testi', async () => {
+  await withApp(async ({ page }) => {
+    await openTemplatesTab(page);
+    await openCard(page, 'base-tre-momenti');
+    await canvasPainted(page, '#tpl-canvas');
+    assert.equal((await slotIds(page)).length, 3);
+    assert.equal(await page.locator('#template-dialog [data-text]').count(), 4);
+    // scorre il tempo
+    await page.waitForFunction(() => !document.querySelector('#tpl-clock').textContent.startsWith('0:00'), null, { timeout: 8000 }); // l'orologio avanza
+    // pausa
+    await page.click('#tpl-play');
+    await page.waitForTimeout(150);
+    const frozen = await page.textContent('#tpl-clock');
+    await page.waitForTimeout(500);
+    assert.equal(await page.textContent('#tpl-clock'), frozen, 'in pausa è fermo');
+    const sample = () => page.evaluate(() => {
+      const c = document.querySelector('#tpl-canvas');
+      return [...c.getContext('2d').getImageData(c.width / 2, c.height / 2, 1, 1).data];
+    });
+    const before = await sample();
+    // il tuo file sul primo segnaposto: l'immagine cambia
+    const [first] = await slotIds(page);
+    await page.setInputFiles(`[data-slot="${first}"] input[type=file]`, m.f('photo.png'));
+    await page.waitForFunction((id) => document.querySelector(`[data-slot="${id}"]`).dataset.state === 'picked', first);
+    assert.equal(await page.textContent(`[data-slot="${first}"] .tpl-slot-state`), 'photo.png');
+    await page.waitForTimeout(500);
+    const after = await sample();
+    assert.notDeepEqual(before, after, `l'anteprima mostra la tua foto: ${before} → ${after}`);
+    // testo
+    await page.fill('#template-dialog [data-text]', 'Il mio titolo speciale');
+    await page.waitForTimeout(300);
+    // un file audio su un segnaposto video viene rifiutato con un messaggio
+    await page.setInputFiles(`[data-slot="${first}"] input[type=file]`, m.f('tone.wav'));
+    await page.waitForSelector('.toast.warn');
+    assert.match(await page.textContent('.toast.warn'), /serve un video o una foto/);
+    assert.equal(await page.textContent(`[data-slot="${first}"] .tpl-slot-state`), 'photo.png', 'resta la scelta precedente');
+    await page.click('[data-act="tpl-cancel"]');
+    assert.equal(await page.locator('#template-dialog').count(), 0);
+  });
+});
+
+test('modelli: «Usa questo modello» crea il progetto con i tuoi file, il formato giusto e il segnaposto saltato si chiude', async () => {
+  await withApp(async ({ page }) => {
+    await openTemplatesTab(page);
+    await openCard(page, 'base-tre-momenti');
+    // senza file non parte
+    await page.click('[data-act="tpl-use"]');
+    await page.waitForSelector('.toast.warn');
+    assert.match(await page.textContent('.toast.warn'), /almeno un video o una foto/);
+    assert.equal(await page.locator('#template-dialog').count(), 1, 'la finestra resta aperta');
+    const ids = await slotIds(page);
+    await page.setInputFiles(`[data-slot="${ids[0]}"] input[type=file]`, m.f('photo.png'));
+    await page.setInputFiles(`[data-slot="${ids[1]}"] input[type=file]`, m.f('a.webm'));
+    await page.click(`[data-slot="${ids[2]}"] .tpl-skip`);
+    await page.fill('#tpl-name', 'Il mio viaggio');
+    await page.fill('#template-dialog [data-text]', 'IL MIO VIAGGIO');
+    await page.waitForFunction(() => document.querySelectorAll('#template-dialog .tpl-slot[data-state]').length === 3);
+    await page.click('[data-act="tpl-use"]');
+    await page.waitForFunction(() => window.__ciak.store.project.name === 'Il mio viaggio', null, { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelectorAll('dialog[open]').length === 0);
+    const info = await page.evaluate(() => {
+      const p = window.__ciak.store.project;
+      const cs = p.tracks.flatMap((t) => t.clips);
+      return {
+        w: p.settings.width, h: p.settings.height,
+        media: Object.values(p.media).map((x) => [x.name, x.kind]).sort(),
+        slots: cs.filter((c) => c.mediaId).map((c) => ({ kind: c.kind, start: c.start, duration: c.duration, scale: c.transform.scale, tr: c.transition?.type ?? null })).sort((a, b) => a.start - b.start),
+        titles: cs.filter((c) => c.kind === 'text').map((c) => c.text.content),
+        dur: Math.max(...cs.map((c) => c.start + c.duration)),
+        poolOk: Object.keys(p.media).every((id) => window.__ciak.pool.has(id)),
+      };
+    });
+    assert.deepEqual([info.w, info.h], [1080, 1920]);
+    assert.deepEqual(info.media, [['a.webm', 'video'], ['photo.png', 'image']]);
+    assert.equal(info.slots.length, 2);
+    assert.equal(info.slots[0].kind, 'image');
+    assert.equal(info.slots[1].kind, 'video');
+    assert.ok(info.slots[0].scale > 1.5, `la foto 4:3 riempie lo schermo verticale (scala ${info.slots[0].scale})`);
+    assert.equal(info.slots[1].tr, 'push-up', 'la transizione del modello resta');
+    assert.ok(info.titles.includes('IL MIO VIAGGIO'));
+    assert.ok(info.poolOk, 'i file sono nel progetto');
+    assert.ok(info.dur < 6.6 && info.dur > 4, `durata dopo il salto ${info.dur}`);
+    // il montaggio si vede davvero
+    await seek(page, 1);
+    const [r, g, b] = await pixel(page, 0.5, 0.5);
+    assert.ok(r + g + b > 60, `si vede la foto (${r},${g},${b})`);
+    // il progetto si salva da solo e si può modificare/annullare come ogni altro
+    await page.evaluate(() => window.__ciak.commit('prova', (d) => { d.tracks[0].clips[0].volume = 0.5; }));
+    assert.equal(await page.evaluate(() => window.__ciak.store.canUndo), true);
+  });
+});
+
+test('modelli: un modello con sfondo opzionale (Citazione) si usa anche solo con i testi', async () => {
+  await withApp(async ({ page }) => {
+    await openTemplatesTab(page);
+    await openCard(page, 'base-citazione');
+    await page.fill('#template-dialog [data-text] >> nth=0', '«Meglio tardi che mai»');
+    await page.click('[data-act="tpl-use"]');
+    await page.waitForFunction(() => window.__ciak.store.project.tracks.some((t) => t.clips.some((c) => c.kind === 'text')), null, { timeout: 15000 });
+    const cs = await clips(page);
+    assert.ok(cs.some((c) => c.kind === 'text' && c.text.content === '«Meglio tardi che mai»'));
+    assert.equal(cs.some((c) => c.mediaId), false, 'nessun media');
+    assert.ok(cs.some((c) => c.kind === 'shape'), 'sfondo colorato e filetto restano');
+    await seek(page, 2);
+    const [r, g, b] = await pixel(page, 0.05, 0.05);
+    assert.ok(r + g + b > 20 && b > r, `fondo blu scuro (${r},${g},${b})`);
+  });
+});
+
+test('modelli: con un progetto non salvato chiede se salvarlo prima, e «Annulla» non cambia nulla', async () => {
+  await withApp(async ({ page }) => {
+    await buildProject(page, 'Lavoro in corso');
+    await openTemplatesTab(page);
+    await openCard(page, 'base-prima-e-dopo');
+    const ids = await slotIds(page);
+    await page.setInputFiles(`[data-slot="${ids[0]}"] input[type=file]`, m.f('photo.png'));
+    await page.waitForFunction((id) => document.querySelector(`[data-slot="${id}"]`).dataset.state === 'picked', ids[0]);
+    await page.click('[data-act="tpl-use"]');
+    await page.waitForSelector('[data-act="open-save"]');
+    await page.click('.dialog:last-of-type [data-act="Annulla"]');
+    assert.equal(await page.evaluate(() => window.__ciak.store.project.name), 'Lavoro in corso', 'il progetto resta');
+    await page.click('[data-act="tpl-use"]');
+    await page.click('[data-act="open-save"]');
+    await page.waitForFunction(() => window.__ciak.store.project.name === 'Prima e dopo', null, { timeout: 15000 });
+    const saved = await page.evaluate(async () => (await window.__ciak.storage.listProjects()).map((e) => e.name));
+    assert.deepEqual(saved, ['Lavoro in corso'], 'il lavoro precedente è stato salvato nell’elenco');
+  });
+});
+
+test('modelli: salva come modello, ritrovalo in «I miei modelli», riusalo con un altro file, esporta, elimina e reimporta', async () => {
+  await withApp(async ({ page, context }) => {
+    await buildProject(page, 'Il mio stile');
+    await page.evaluate(() => window.__ciak.selection.clear());
+    await page.click('#btn-save-template');
+    await page.fill('.dialog:last-of-type input.text-input', 'Mio modello');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.toast.success');
+    await openTemplatesTab(page);
+    await page.click('.chip[data-cat^="I miei modelli"]');
+    assert.equal(await page.locator('.tpl-card').count(), 1);
+    assert.match(await page.textContent('.chip[data-cat^="I miei modelli"]'), /\(1\)/);
+    await canvasPainted(page, '.tpl-thumb');
+    await openCard(page, await page.getAttribute('.tpl-card', 'data-id'));
+    assert.equal((await slotIds(page)).length, 1);
+    // esporta
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-act="tpl-export"]')]);
+    assert.match(dl.suggestedFilename(), /^Mio modello\.ciak-modello$/);
+    const path = await dl.path();
+    const fs = await import('node:fs');
+    const file = JSON.parse(fs.readFileSync(path, 'utf8'));
+    assert.equal(file.format, 'ciak-modello');
+    assert.deepEqual(file.project.media, {}, 'nessun file multimediale nel modello');
+    // usa con un altro file
+    const [slot] = await slotIds(page);
+    await page.setInputFiles(`[data-slot="${slot}"] input[type=file]`, m.f('b.webm'));
+    await page.waitForFunction((id) => document.querySelector(`[data-slot="${id}"]`).dataset.state === 'picked', slot);
+    await page.click('[data-act="tpl-use"]');
+    await page.waitForSelector('[data-act="open-save"]').catch(() => {});
+    if (await page.locator('[data-act="open-nosave"]').count()) await page.click('[data-act="open-nosave"]');
+    await page.waitForFunction(() => Object.values(window.__ciak.store.project.media).some((x) => x.name === 'b.webm'), null, { timeout: 15000 });
+    // elimina
+    await openTemplatesTab(page);
+    await page.click('.chip[data-cat^="I miei modelli"]');
+    await page.click('.tpl-card');
+    await page.waitForSelector('[data-act="tpl-delete"]');
+    await page.click('[data-act="tpl-delete"]');
+    await page.click('.dialog:last-of-type [data-act="Elimina"]');
+    await page.waitForFunction(() => document.querySelectorAll('.tpl-card').length === 0);
+    // reimporta il file esportato
+    await page.setInputFiles('#tpl-import-input', path);
+    await page.waitForFunction(() => document.querySelectorAll('.tpl-card').length === 1, null, { timeout: 8000 });
+    assert.match(await page.textContent('.tpl-name'), /Mio modello/);
+    // un file qualsiasi non è un modello
+    const bad = '/tmp/claude-0/non-modello.txt';
+    fs.writeFileSync(bad, 'ciao');
+    await page.setInputFiles('#tpl-import-input', bad);
+    await page.waitForSelector('.toast.error');
+    assert.match(await page.textContent('.toast.error'), /valido|modello/);
+    assert.equal(await page.locator('.tpl-card').count(), 1);
+    void context;
+  });
+});

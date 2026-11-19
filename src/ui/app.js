@@ -26,6 +26,8 @@ import { Storage } from '../engine/storage.js';
 import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export.js';
 import { Teleprompter } from './teleprompter.js';
 import { openProjectsDialog } from './projects-dialog.js';
+import { saveCurrentAsTemplate } from './templates-panel.js';
+import { applyTemplate, parseTemplateFile, serializeTemplate, templateFromProject } from '../core/templates.js';
 import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
 import { Exporter, QUALITY, availableFormats, downloadBlob, estimateBitrate, exportSize, FORMATS } from '../engine/exporter.js';
@@ -1413,19 +1415,7 @@ export class App {
       async openSaved(id) {
         const entry = await app.storage.getProjectEntry(id);
         if (!entry) return void toast('Questo progetto non esiste più.', { type: 'warn' });
-        const has = allClips(app.store.project).length || Object.keys(app.store.project.media).length;
-        if (has && !app.isSavedInList() && app.savedMark?.id !== id) {
-          const choice = await new Promise((resolve) => {
-            openDialog({
-              title: 'Il progetto attuale non è salvato',
-              content: h('p', {}, 'Aprendo un altro progetto, quello attuale verrebbe chiuso senza essere nell’elenco.'),
-              actions: [{ label: 'Annulla', onClick: () => resolve('cancel') }, { label: 'Apri senza salvare', danger: true, id: 'open-nosave', onClick: () => resolve('open') }, { label: 'Salva e apri', primary: true, id: 'open-save', onClick: () => resolve('save') }],
-              onClose: () => resolve('cancel'),
-            });
-          });
-          if (choice === 'cancel') return false;
-          if (choice === 'save' && !(await A.saveToList({ name: app.store.project.name }))) return false;
-        }
+        if (app.savedMark?.id !== id && !(await app.#leaveCurrentProject())) return false;
         const p = normalizeProject(entry.project);
         const blobs = new Map();
         let missing = 0;
@@ -1466,6 +1456,74 @@ export class App {
         if (app.savedMark?.id === id) app.savedMark = null;
         await app.storage.gc(Object.keys(app.store.project.media));
         toast('Progetto eliminato');
+      },
+
+      // ---- modelli ---------------------------------------------------------------------------------
+      saveCurrentAsTemplate() {
+        const p = app.store.project;
+        if (!allClips(p).length) return toast('Il progetto è vuoto: monta qualcosa prima di salvarlo come modello.', { type: 'warn' });
+        return saveCurrentAsTemplate(app);
+      },
+      async saveAsTemplate(name) {
+        if (!app.storage.available) return void toast('Il salvataggio nel browser non è disponibile.', { type: 'error' });
+        const t = templateFromProject(app.store.project, { name, category: 'I miei modelli' });
+        if (!t.slots.length && !t.texts.length) return void toast('Il montaggio non ha clip o testi da sostituire.', { type: 'warn' });
+        try {
+          await app.storage.putTemplate(t);
+          toast(`Modello «${name}» salvato (scheda Modelli → I miei modelli)`, { type: 'success' });
+          return t;
+        } catch (e) {
+          toast(`Salvataggio non riuscito: ${e.message}`, { type: 'error' });
+          return null;
+        }
+      },
+      exportTemplate(t) {
+        downloadBlob(new Blob([serializeTemplate(t)], { type: 'application/json' }), `${t.name.replace(/[\\/:*?"<>|]+/g, '_')}.ciak-modello`);
+      },
+      async importTemplate(file) {
+        if (!app.storage.available) return void toast('Il salvataggio nel browser non è disponibile.', { type: 'error' });
+        try {
+          const t = parseTemplateFile(await file.text());
+          const have = await app.storage.listTemplates();
+          t.id = uid('tpl');
+          t.category = 'I miei modelli';
+          t.name = uniqueName(t.name, have.map((x) => x.name));
+          await app.storage.putTemplate(t);
+          toast(`Modello «${t.name}» importato`, { type: 'success' });
+          return t;
+        } catch (e) {
+          toast(`Impossibile importare: ${e.message}`, { type: 'error' });
+          return null;
+        }
+      },
+      async deleteTemplate(id) {
+        await app.storage.deleteTemplate(id);
+        toast('Modello eliminato');
+      },
+      /** Crea un nuovo progetto dal modello con i file scelti. picks: {idSegnaposto: {file, meta}} */
+      async useTemplate(template, { picks = {}, texts = {}, name } = {}) {
+        if (!(await app.#leaveCurrentProject())) return false;
+        const t = toast('Creo il progetto dal modello…', { ms: 60000 });
+        try {
+          const media = {};
+          const blobs = new Map();
+          for (const [slotId, pick] of Object.entries(picks)) {
+            const id = uid('m');
+            const { file, meta } = pick;
+            media[slotId] = { id, name: file.name, kind: meta.kind, mime: meta.mime || file.type, size: file.size, duration: meta.duration, width: meta.width, height: meta.height, hasAudio: meta.kind !== 'image' };
+            blobs.set(id, file);
+          }
+          const project = applyTemplate(template, { media, texts, name: name?.trim() || template.name });
+          await app.#reset(project, blobs);
+          for (const [slotId, pick] of Object.entries(picks)) if (pick.meta.thumb) app.pool.setInfo(media[slotId].id, { thumb: pick.meta.thumb });
+          toast(`Progetto creato dal modello «${template.name}»`, { type: 'success' });
+          return true;
+        } catch (e) {
+          toast(`Impossibile usare il modello: ${e.message}`, { type: 'error' });
+          return false;
+        } finally {
+          t.remove();
+        }
       },
 
       // ---- pacchetto .ciak ------------------------------------------------------------------
@@ -1610,6 +1668,26 @@ export class App {
     this.#scheduleSave();
     // libera i file che non servono né a questo progetto né a quelli salvati nell'elenco
     if (this.storage.available) this.storage.gc(Object.keys(project.media)).catch(() => {});
+  }
+
+  /**
+   * Prima di sostituire il progetto aperto: se ha contenuto e non è salvato nell'elenco chiede cosa fare.
+   * @returns {Promise<boolean>} false se l'utente ha annullato
+   */
+  async #leaveCurrentProject() {
+    const has = allClips(this.store.project).length || Object.keys(this.store.project.media).length;
+    if (!has || this.isSavedInList()) return true;
+    const choice = await new Promise((resolve) => {
+      openDialog({
+        title: 'Il progetto attuale non è salvato',
+        content: h('p', {}, 'Aprendo un altro progetto, quello attuale verrebbe chiuso senza essere nell’elenco.'),
+        actions: [{ label: 'Annulla', onClick: () => resolve('cancel') }, { label: 'Continua senza salvare', danger: true, id: 'open-nosave', onClick: () => resolve('open') }, { label: 'Salva e continua', primary: true, id: 'open-save', onClick: () => resolve('save') }],
+        onClose: () => resolve('cancel'),
+      });
+    });
+    if (choice === 'cancel') return false;
+    if (choice === 'save') return !!(await this.actions.saveToList({ name: this.store.project.name }));
+    return true;
   }
 
   /** Il progetto aperto coincide con la voce salvata nell'elenco (nessuna modifica da allora). */
