@@ -1726,7 +1726,8 @@ export class App {
             h('ul', {},
               h('li', {}, 'L’esportazione registra l’anteprima a piena risoluzione in tempo reale: mantieni la scheda visibile fino alla fine.'),
               h('li', {}, 'Il progetto si salva da solo nel browser. Per spostarlo usa «Salva .ciak» nelle impostazioni del progetto.'),
-              h('li', {}, 'Non incluse: trascrizione automatica, rimozione sfondo con IA, stabilizzazione, riproduzione inversa.'),
+              h('li', {}, 'Sottotitoli automatici: scheda «Sottotitoli» → «Sottotitoli automatici». Scegli la lingua (non si riconosce da sola). Nel programma per computer il riconoscimento è locale; la prima volta scarica un modello (da 40 MB), poi funziona anche senza internet.'),
+              h('li', {}, 'Stabilizzazione, riproduzione al contrario, ingrandimento 2× e conversioni MP4/MOV/MKV richiedono il programma per computer (usa ffmpeg).'),
               h('li', {}, 'Formati letti: quelli supportati dal browser (MP4/H.264, WebM, MOV in parte, MP3, WAV, AAC, PNG, JPG, WebP…).'))),
           actions: [{ label: 'Chiudi', primary: true }],
         });
