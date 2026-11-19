@@ -25,6 +25,8 @@ import { Player } from '../engine/player.js';
 import { Storage } from '../engine/storage.js';
 import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export.js';
 import { Teleprompter } from './teleprompter.js';
+import { openProjectsDialog } from './projects-dialog.js';
+import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
 import { Exporter, QUALITY, availableFormats, downloadBlob, estimateBitrate, exportSize, FORMATS } from '../engine/exporter.js';
 import { VoiceRecorder, computePeaks, decodeAudio, kindOfFile, probeMedia, captureFrameBlob } from '../engine/media-import.js';
@@ -86,6 +88,8 @@ export class App {
     this.voice = new VoiceRecorder();
     this.screenRec = new ScreenRecorder();
     this.prompter = new Teleprompter();
+    /** Voce di «I miei progetti» a cui corrisponde il progetto aperto, e revisione al momento del salvataggio. */
+    this.savedMark = null;
     this.prompter.onChange = () => this.events.emit('prompter');
     this.customFonts = [];
     this.fontsVersion = 0;
@@ -849,7 +853,7 @@ export class App {
 
       async newProject() {
         const has = allClips(app.store.project).length || Object.keys(app.store.project.media).length;
-        if (has && !(await confirmDialog('Il progetto corrente verrà chiuso e i suoi dati rimossi dal browser. Esporta o salva un pacchetto .ciak se vuoi conservarlo.', { confirmLabel: 'Nuovo progetto', danger: true, title: 'Iniziare un nuovo progetto?' }))) return;
+        if (has && !app.isSavedInList() && !(await confirmDialog('Il progetto corrente verrà chiuso. Se non l’hai salvato in «I miei progetti» o in un file .ciak andrà perso.', { confirmLabel: 'Nuovo progetto', danger: true, title: 'Iniziare un nuovo progetto?' }))) return;
         await app.#reset(createProject());
         toast('Nuovo progetto creato');
       },
@@ -1378,6 +1382,92 @@ export class App {
         return this.exportSubtitles('srt');
       },
 
+      // ---- I miei progetti (elenco nel browser) ------------------------------------------------
+      openProjects() {
+        openProjectsDialog(app);
+      },
+      /** Salva (o aggiorna) il progetto aperto nell'elenco. Restituisce la voce, o null se non riesce. */
+      async saveToList({ name, asNew = false } = {}) {
+        const p = app.store.project;
+        if (!app.storage.available) return void toast('Il salvataggio nel browser non è disponibile.', { type: 'error' });
+        if (!allClips(p).length && !Object.keys(p.media).length) return void toast('Il progetto è vuoto: aggiungi qualcosa prima di salvarlo.', { type: 'warn' });
+        try {
+          const items = await app.storage.listProjects();
+          const mark = !asNew && app.savedMark && items.find((e) => e.id === app.savedMark.id);
+          const id = mark ? mark.id : uid('prj');
+          const others = items.filter((e) => e.id !== id).map((e) => e.name);
+          const wanted = (name ?? p.name).trim() || 'Progetto';
+          const finalName = others.some((n) => n.toLowerCase() === wanted.toLowerCase()) || !mark ? uniqueName(wanted, others) : wanted;
+          if (finalName !== p.name) app.commit('Nome progetto', (d) => { d.name = finalName; });
+          const entry = makeEntry({ id, name: finalName, project: app.store.project, thumb: app.#thumbnail(), created: mark?.created });
+          await app.storage.putProjectEntry(entry);
+          app.savedMark = { id, rev: app.store.revision };
+          toast(`Progetto salvato in «${finalName}»`, { type: 'success' });
+          return entry;
+        } catch (e) {
+          toast(e?.name === 'QuotaExceededError' ? 'Spazio del browser esaurito.' : `Salvataggio non riuscito: ${e.message}`, { type: 'error' });
+          return null;
+        }
+      },
+      /** Apre un progetto dell'elenco. Se quello attuale non è salvato chiede cosa fare. */
+      async openSaved(id) {
+        const entry = await app.storage.getProjectEntry(id);
+        if (!entry) return void toast('Questo progetto non esiste più.', { type: 'warn' });
+        const has = allClips(app.store.project).length || Object.keys(app.store.project.media).length;
+        if (has && !app.isSavedInList() && app.savedMark?.id !== id) {
+          const choice = await new Promise((resolve) => {
+            openDialog({
+              title: 'Il progetto attuale non è salvato',
+              content: h('p', {}, 'Aprendo un altro progetto, quello attuale verrebbe chiuso senza essere nell’elenco.'),
+              actions: [{ label: 'Annulla', onClick: () => resolve('cancel') }, { label: 'Apri senza salvare', danger: true, id: 'open-nosave', onClick: () => resolve('open') }, { label: 'Salva e apri', primary: true, id: 'open-save', onClick: () => resolve('save') }],
+              onClose: () => resolve('cancel'),
+            });
+          });
+          if (choice === 'cancel') return false;
+          if (choice === 'save' && !(await A.saveToList({ name: app.store.project.name }))) return false;
+        }
+        const p = normalizeProject(entry.project);
+        const blobs = new Map();
+        let missing = 0;
+        for (const mid of Object.keys(p.media)) {
+          const blob = await app.storage.getMedia(mid);
+          if (blob) blobs.set(mid, blob);
+          else missing++;
+        }
+        await app.#reset(p, blobs, { persist: false });
+        app.savedMark = { id, rev: app.store.revision };
+        toast(missing ? `«${p.name}» aperto. ${missing} file non sono più disponibili.` : `«${p.name}» aperto`, { type: missing ? 'warn' : 'success' });
+        return true;
+      },
+      async duplicateSaved(id) {
+        const entry = await app.storage.getProjectEntry(id);
+        if (!entry) return;
+        const items = await app.storage.listProjects();
+        const name = uniqueName(`Copia di ${entry.name}`, items.map((e) => e.name));
+        await app.storage.putProjectEntry({ ...makeEntry({ id: uid('prj'), name, project: entry.project, thumb: entry.thumb }) });
+        toast(`Creata la copia «${name}»`);
+      },
+      async renameSaved(id, name) {
+        const entry = await app.storage.getProjectEntry(id);
+        if (!entry) return;
+        const items = await app.storage.listProjects();
+        const n = uniqueName(name, items.filter((e) => e.id !== id).map((e) => e.name));
+        entry.name = n;
+        entry.project.name = n;
+        entry.updated = Date.now();
+        await app.storage.putProjectEntry(entry);
+        if (app.savedMark?.id === id && app.store.project.name !== n) {
+          app.commit('Nome progetto', (d) => { d.name = n; });
+          app.savedMark.rev = app.store.revision;
+        }
+      },
+      async deleteSaved(id) {
+        await app.storage.deleteProjectEntry(id);
+        if (app.savedMark?.id === id) app.savedMark = null;
+        await app.storage.gc(Object.keys(app.store.project.media));
+        toast('Progetto eliminato');
+      },
+
       // ---- pacchetto .ciak ------------------------------------------------------------------
       async savePackage() {
         const p = app.store.project;
@@ -1501,15 +1591,16 @@ export class App {
   }
 
   /** Sostituisce l'intero progetto (nuovo/apri) e ripulisce i media. */
-  async #reset(project, blobs = new Map()) {
+  async #reset(project, blobs = new Map(), { persist = true } = {}) {
     this.player.pause();
     this.selection.clear();
     this.pool.clear();
     this.clipboard = null;
-    if (this.storage.available) await this.storage.clearAll().catch(() => {});
+    this.savedMark = null;
+    if (this.storage.available) await this.storage.clearWorking().catch(() => {});
     for (const [id, blob] of blobs) {
       this.pool.add(id, blob);
-      this.storage.putMedia(id, blob).catch(() => {});
+      if (persist) this.storage.putMedia(id, blob).catch(() => {});
     }
     this.store.replace(project);
     this.player.resizeCanvas();
@@ -1517,6 +1608,29 @@ export class App {
     for (const id of blobs.keys()) this.#enrich(id, true);
     this.timeline.fit();
     this.#scheduleSave();
+    // libera i file che non servono né a questo progetto né a quelli salvati nell'elenco
+    if (this.storage.available) this.storage.gc(Object.keys(project.media)).catch(() => {});
+  }
+
+  /** Il progetto aperto coincide con la voce salvata nell'elenco (nessuna modifica da allora). */
+  isSavedInList() {
+    return !!this.savedMark && this.store.revision === this.savedMark.rev;
+  }
+
+  /** Miniatura (JPEG piccolo) del fotogramma che si vede ora nell'anteprima. */
+  #thumbnail() {
+    try {
+      const src = this.preview.canvas;
+      if (!src?.width) return null;
+      const w = 320;
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = Math.max(1, Math.round((w * src.height) / src.width));
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.7);
+    } catch {
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------

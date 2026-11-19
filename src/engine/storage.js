@@ -2,7 +2,7 @@
 // Se IndexedDB non è disponibile (navigazione privata, blocco) l'app funziona comunque, senza recupero.
 
 const DB_NAME = 'ciak-studio';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export class Storage {
   #db = null;
@@ -17,6 +17,8 @@ export class Storage {
           const db = req.result;
           if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
           if (!db.objectStoreNames.contains('media')) db.createObjectStore('media');
+          if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects'); // «I miei progetti»: istantanee con nome
+          if (!db.objectStoreNames.contains('templates')) db.createObjectStore('templates'); // modelli creati dall'utente
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -71,16 +73,59 @@ export class Storage {
     return (await this.#tx('media', 'readonly', (s) => s.getAllKeys())) ?? [];
   }
 
-  /** Elimina i media non più referenziati (da chiamare a cronologia vuota). */
+  // ---- I miei progetti (istantanee: il JSON del progetto; i file restano nell'archivio `media`, condivisi per id) ----
+  /** Elenco senza il JSON completo (leggero), dal più recente. */
+  async listProjects() {
+    if (!this.available) return [];
+    const all = (await this.#tx('projects', 'readonly', (s) => s.getAll())) ?? [];
+    return all.map(({ project, ...rest }) => ({ ...rest, mediaIds: Object.keys(project?.media ?? {}) })).sort((a, b) => b.updated - a.updated);
+  }
+  async getProjectEntry(id) {
+    if (!this.available) return null;
+    return (await this.#tx('projects', 'readonly', (s) => s.get(id))) ?? null;
+  }
+  async putProjectEntry(entry) {
+    if (!this.available) return false;
+    await this.#tx('projects', 'readwrite', (s) => s.put(JSON.parse(JSON.stringify(entry)), entry.id));
+    return true;
+  }
+  async deleteProjectEntry(id) {
+    if (!this.available) return;
+    await this.#tx('projects', 'readwrite', (s) => s.delete(id));
+  }
+
+  // ---- Modelli dell'utente ----
+  async listTemplates() {
+    if (!this.available) return [];
+    return ((await this.#tx('templates', 'readonly', (s) => s.getAll())) ?? []).sort((a, b) => b.updated - a.updated);
+  }
+  async putTemplate(t) {
+    if (!this.available) return false;
+    await this.#tx('templates', 'readwrite', (s) => s.put(JSON.parse(JSON.stringify(t)), t.id));
+    return true;
+  }
+  async deleteTemplate(id) {
+    if (!this.available) return;
+    await this.#tx('templates', 'readwrite', (s) => s.delete(id));
+  }
+
+  /** Elimina i media non referenziati dal progetto corrente (`keepIds`) né da alcun progetto salvato. */
   async gc(keepIds) {
     const keep = new Set(keepIds);
+    if (this.available) for (const e of (await this.#tx('projects', 'readonly', (s) => s.getAll())) ?? []) for (const id of Object.keys(e.project?.media ?? {})) keep.add(id);
     for (const id of await this.mediaIds()) if (!keep.has(id)) await this.deleteMedia(id);
   }
 
-  async clearAll() {
+  /** Dimenticare il progetto di lavoro (non quelli salvati nell'elenco). */
+  async clearWorking() {
     if (!this.available) return;
     await this.#tx('meta', 'readwrite', (s) => s.clear());
-    await this.#tx('media', 'readwrite', (s) => s.clear());
+  }
+
+  /** Cancella tutto, elenco compreso (solo per le prove). */
+  async clearAll() {
+    if (!this.available) return;
+    for (const st of ['meta', 'media', 'projects', 'templates']) await this.#tx(st, 'readwrite', (s) => s.clear());
   }
 
   async estimate() {

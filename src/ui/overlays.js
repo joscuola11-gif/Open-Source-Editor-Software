@@ -101,6 +101,7 @@ export function promptDialog(title, value = '', { label = '' } = {}) {
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
+        e.preventDefault(); // altrimenti lo stesso Invio «preme» il pulsante che ha riavuto il focus e riapre la finestra
         answered = true;
         resolve(input.value.trim() || null);
         ctl.close('ok');

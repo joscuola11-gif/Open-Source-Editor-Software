@@ -194,6 +194,7 @@ export class Inspector {
           actionButton({ label: 'Nuovo', icon: 'file', onClick: () => actions.newProject() }),
           actionButton({ label: 'Apri…', icon: 'folder', onClick: () => actions.openPackage() }),
           actionButton({ label: 'Salva .ciak', icon: 'download', onClick: () => actions.savePackage() })),
+        h('div', { class: 'btn-row wrap' }, h('button', { class: 'btn small primary', type: 'button', id: 'btn-projects', title: 'Salva, riapri, duplica ed elimina i tuoi progetti', onClick: () => actions.openProjects() }, icon('folder', 14), 'I miei progetti')),
         h('p', { class: 'hint' }, 'Il progetto si salva da solo nel browser. Il file .ciak contiene progetto e media, per spostarlo su un altro computer.'),
       ]),
     );
