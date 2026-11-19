@@ -1,0 +1,585 @@
+CAPCUT - CATALOGO ESTESO DELLE FUNZIONI
+Revisione: 19 novembre 2026
+Lingua: italiano
+Ambito: CapCut Desktop (Windows/macOS), Mobile (Android/iOS), Web e strumenti collegati al sito ufficiale CapCut.
+
+AVVERTENZE IMPORTANTI
+- Questo e' un INVENTARIO MOLTO AMPIO delle funzionalita' documentate, non una promessa di completezza assoluta. CapCut non pubblica una lista unica, immutabile e verificabile di OGNI funzione, preset, filtro, transizione, modello e variante.
+- Sono elencate sia funzioni vere e proprie (per esempio 'Chroma Key'), sia operazioni specifiche rese possibili da quelle funzioni (per esempio 'ridimensionare la maschera'). Il numero di voci non equivale al numero di strumenti unici nell'interfaccia.
+- Le funzionalita' non sono tutte disponibili contemporaneamente su PC, Android, iPhone e Web. Alcune richiedono account, regione compatibile, aggiornamento, prova/crediti AI o abbonamento Standard/Pro.
+- Non tutte le funzioni AI sono gratuite, ne' tutte sono incluse in CapCut Pro senza crediti o limiti. I piani possono cambiare per mercato.
+- Diversi nomi sono tradotti per chiarezza; CapCut potrebbe mostrare diciture inglesi o diverse da quelle qui usate.
+- Gli strumenti accessibili dal sito di CapCut possono essere pagine autonome, non voci del menu di CapCut Desktop/Mobile. Pippit, Hypic e il sito Dreamina come prodotti separati NON sono considerati automaticamente funzioni interne di CapCut.
+- Il catalogo e' basato su fonti ufficiali consultate alla data indicata, non su un'installazione reale di ciascuna app.
+
+LEGENDA DELLA DISPONIBILITA'
+Desktop = app per PC/Mac; Mobile = app Android/iOS; Web = browser.
+Una descrizione senza piattaforma specifica indica una capacita' del prodotto/famiglia CapCut, NON che sia disponibile su tutte le piattaforme.
+'Se/ove disponibile' = dipende dalla versione, dal paese, dal piano o dall'interfaccia.
+
+==============================================================================
+01. PIATTAFORME, ACCOUNT E AVVIO (15 voci)
+==============================================================================
+001. Usare CapCut su Windows (Desktop)
+002. Usare CapCut su macOS (Desktop)
+003. Usare CapCut su Android (Mobile)
+004. Usare CapCut su iOS/iPadOS (Mobile; interfaccia variabile)
+005. Usare CapCut Web nel browser
+006. Accedere o registrare un account
+007. Creare un nuovo progetto
+008. Aprire un progetto esistente
+009. Modificare nome del progetto
+010. Organizzare e consultare i progetti disponibili
+011. Accedere alla libreria di modelli (Templates)
+012. Accedere agli strumenti AI dalla home o dall'editor
+013. Consultare le risorse gratuite e premium
+014. Gestire abbonamento e funzioni Pro
+015. Usare CapCut Space per i contenuti e i progetti supportati
+
+==============================================================================
+02. IMPORTAZIONE E GESTIONE MEDIA (16 voci)
+==============================================================================
+016. Importare video dal dispositivo
+017. Importare immagini e fotografie
+018. Importare file audio
+019. Trascinare file nell'editor (drag-and-drop, Desktop/Web)
+020. Aggiungere più media allo stesso progetto
+021. Consultare e selezionare media importati
+022. Utilizzare video stock dalla libreria CapCut
+023. Utilizzare immagini o elementi stock disponibili
+024. Utilizzare musica della libreria
+025. Utilizzare effetti sonori della libreria
+026. Utilizzare materiali con green screen predefiniti
+027. Utilizzare asset ed elementi generati dall'AI
+028. Cercare media mediante ricerca intelligente per oggetti (nelle versioni supportate)
+029. Cercare media mediante dialoghi/parlato (nelle versioni supportate)
+030. Cercare media mediante persone (nelle versioni supportate)
+031. Caricare o richiamare contenuti dallo spazio cloud supportato
+
+==============================================================================
+03. TIMELINE E MONTAGGIO DI BASE (25 voci)
+==============================================================================
+032. Inserire clip video nella timeline
+033. Inserire clip audio nella timeline
+034. Inserire immagini nella timeline
+035. Aggiungere tracce video, audio e di testo
+036. Lavorare su più tracce/livelli
+037. Spostare clip nel tempo
+038. Riordinare le clip
+039. Tagliare una clip (trim)
+040. Dividere una clip nel punto desiderato (split)
+041. Rimuovere una clip
+042. Eliminare il segmento a sinistra del cursore/taglio, quando disponibile
+043. Eliminare il segmento a destra del cursore/taglio, quando disponibile
+044. Regolare la durata delle immagini
+045. Duplicare clip ed elementi
+046. Copiare/incollare clip ed elementi
+047. Selezionare più elementi per operazioni comuni
+048. Sovrapporre due o più clip
+049. Aggiungere marker/segnaposto alla timeline
+050. Creare un fermo immagine (freeze frame)
+051. Invertire il verso di riproduzione (reverse)
+052. Regolare il livello di zoom della timeline
+053. Visualizzare anteprima del montaggio
+054. Annullare un'operazione (undo)
+055. Ripristinare un'operazione annullata (redo)
+056. Usare scorciatoie da tastiera nelle versioni Desktop
+
+==============================================================================
+04. INQUADRATURA, FORMATO E TRASFORMAZIONI (18 voci)
+==============================================================================
+057. Cambiare rapporto d'aspetto del progetto
+058. Usare formato verticale 9:16
+059. Usare formato orizzontale 16:9
+060. Usare formato quadrato 1:1 e altri rapporti disponibili
+061. Ritagliare l'inquadratura (crop)
+062. Ridimensionare una clip (scale)
+063. Ruotare un video o un'immagine
+064. Ribaltare orizzontalmente (mirror/flip)
+065. Ribaltare verticalmente (flip)
+066. Spostare un elemento lungo gli assi X/Y
+067. Controllare la posizione del soggetto nel fotogramma
+068. Modificare opacità/trasparenza di elementi
+069. Applicare zoom manuale e digital pan
+070. Creare composizioni picture-in-picture (PiP) mediante overlay
+071. Creare composizioni split screen mediante più livelli/maschere
+072. Adattare clip alle proporzioni dei social network
+073. Auto Reframe AI per mantenere il soggetto nell'inquadratura (disponibilità variabile)
+074. Personalizzare lo sfondo/canvas in base alle opzioni disponibili
+
+==============================================================================
+05. ANIMAZIONI, KEYFRAME E MOVIMENTO (17 voci)
+==============================================================================
+075. Inserire keyframe sui parametri supportati
+076. Animare posizione mediante keyframe
+077. Animare scala/zoom mediante keyframe
+078. Animare rotazione mediante keyframe
+079. Animare opacità mediante keyframe
+080. Regolare le curve/grafici dei keyframe (Desktop)
+081. Creare accelerazioni e rallentamenti del movimento animato
+082. Applicare preset di animazione in entrata
+083. Applicare preset di animazione in uscita
+084. Applicare animazioni cicliche/combinate dove previste
+085. Animare immagini e sovrapposizioni
+086. Animare adesivi e grafica
+087. Applicare motion tracking a testo/adesivi/oggetti (versioni compatibili)
+088. Seguire il movimento di soggetti o oggetti nel video
+089. Applicare camera tracking (funzione avanzata, spesso Pro)
+090. Applicare AI Motion o movimenti simulati della videocamera (se disponibili)
+091. Applicare effetti tipo 3D Zoom su fotografie (ove disponibili)
+
+==============================================================================
+06. VELOCITÀ, FLUIDITÀ E RIPRODUZIONE (13 voci)
+==============================================================================
+092. Aumentare velocità di una clip
+093. Ridurre velocità di una clip
+094. Impostare velocità costante
+095. Impostare curva di velocità variabile (speed ramp)
+096. Usare curve di velocità preimpostate
+097. Personalizzare punti della curva di velocità
+098. Realizzare slow motion
+099. Realizzare fast motion/time-lapse tramite velocità
+100. Applicare Super Slow Motion AI (quando disponibile)
+101. Usare strumenti di fluidificazione/interpolazione del movimento dove previsti
+102. Invertire la riproduzione del video
+103. Congelare un fotogramma per un intervallo scelto
+104. Sincronizzare il montaggio con il ritmo musicale
+
+==============================================================================
+07. TRANSIZIONI (11 voci)
+==============================================================================
+105. Aggiungere transizioni tra clip
+106. Modificare durata della transizione
+107. Usare transizioni dissolvenza/dissolvenza incrociata
+108. Usare transizioni sfocatura (blur)
+109. Usare transizioni scorrimento (slide)
+110. Usare transizioni push/spinta
+111. Usare transizioni zoom
+112. Usare transizioni split/divisione
+113. Usare transizioni maschera
+114. Usare transizioni grafiche/motion graphics (MG)
+115. Usare altre categorie di transizioni del catalogo
+
+==============================================================================
+08. MASCHERE, SFONDI E COMPOSITING (16 voci)
+==============================================================================
+116. Applicare una maschera a un livello
+117. Isolare soltanto una porzione del fotogramma
+118. Spostare e ridimensionare una maschera
+119. Regolare sfumatura dei bordi della maschera (feather, se presente)
+120. Usare maschere per reveal e compositing
+121. Combinare maschere e keyframe
+122. Applicare modalità di fusione (blend modes)
+123. Combinare più video o immagini sullo stesso frame
+124. Creare overlay visivi con elementi e stock
+125. Rimuovere il green screen con Chroma Key
+126. Regolare parametri di chroma key, tolleranza/intensità e ombre (a seconda della versione)
+127. Rimuovere automaticamente lo sfondo video con AI
+128. Ritagliare/isolare automaticamente persone e altri soggetti (Auto Cutout)
+129. Sostituire lo sfondo rimosso con colore, immagine o video
+130. Sfocare porzioni del fotogramma con maschere/effetti
+131. Seguire un volto/oggetto con una maschera, dove supportato
+
+==============================================================================
+09. FILTRI, EFFETTI VIDEO E STILI (17 voci)
+==============================================================================
+132. Applicare filtri video
+133. Regolare l'intensità dei filtri quando prevista
+134. Applicare effetti video dal catalogo
+135. Applicare effetti sul corpo/volto ove disponibili
+136. Usare effetti sfocatura (blur)
+137. Usare effetti glitch e distorsione
+138. Usare effetti zoom e movimento
+139. Usare effetti shake/vibrazione
+140. Usare effetti particellari e luminosi
+141. Usare effetti cinematici/cinematografici
+142. Usare effetti retrò/VHS e film-look
+143. Usare effetti 3D e profondità disponibili
+144. Usare effetti di transizione dedicati
+145. Usare sovrapposizioni di luce e colore
+146. Applicare stili automatici AI (Auto Styles, disponibilità variabile)
+147. Convertire contenuti in stile anime/cartoon tramite strumenti dedicati
+148. Personalizzare intensità/durata degli effetti supportati
+
+==============================================================================
+10. REGOLAZIONE VIDEO E COLOR GRADING (22 voci)
+==============================================================================
+149. Modificare luminosità
+150. Modificare contrasto
+151. Modificare saturazione
+152. Modificare esposizione
+153. Regolare luci/highlights
+154. Regolare ombre/shadows
+155. Regolare temperatura colore
+156. Regolare tinta/tonalità
+157. Modificare nitidezza (sharpen) ove disponibile
+158. Regolare vignettatura
+159. Applicare correzione colore automatica/AI (Auto Adjust)
+160. Applicare Auto Enhance AI per miglioramenti visivi
+161. Usare controlli HSL (tonalità, saturazione, luminanza)
+162. Regolare colori selettivi tramite HSL
+163. Usare curve di correzione colore
+164. Usare ruote colore (color wheels)
+165. Importare LUT personalizzate nelle versioni che le supportano
+166. Applicare LUT/preset LUT
+167. Fare color matching/corrispondenza colore dove presente
+168. Rimuovere sfarfallio/flicker video (quando disponibile)
+169. Correggere/ottimizzare illuminazione con strumenti AI (Relight)
+170. Regolare lo stile colore tra clip per uniformità
+
+==============================================================================
+11. TESTO E TITOLAZIONE (21 voci)
+==============================================================================
+171. Aggiungere testo libero al video
+172. Spostare e scalare caselle di testo
+173. Impostare font/carattere
+174. Modificare dimensione del font
+175. Cambiare colore del testo
+176. Impostare grassetto/stili disponibili
+177. Modificare allineamento del testo
+178. Regolare spaziatura del testo dove disponibile
+179. Applicare contorno/bordo (stroke)
+180. Applicare ombra al testo
+181. Impostare sfondo/cornice per testo
+182. Impostare opacità del testo
+183. Usare modelli di testo predefiniti
+184. Applicare effetti stilistici al testo
+185. Applicare animazioni di ingresso al testo
+186. Applicare animazioni di uscita al testo
+187. Applicare animazioni cicliche di testo
+188. Animare il testo con keyframe
+189. Usare tracking per agganciare testo a un soggetto
+190. Aggiungere titoli, intestazioni e callout
+191. Creare testo con font/stili AI, ove disponibili
+
+==============================================================================
+12. SOTTOTITOLI, TRASCRIZIONE E LINGUE (23 voci)
+==============================================================================
+192. Creare sottotitoli manualmente
+193. Generare sottotitoli automatici dal parlato (Auto Captions)
+194. Selezionare la lingua di riconoscimento supportata
+195. Correggere il testo dei sottotitoli generati
+196. Regolare posizione dei sottotitoli
+197. Regolare inizio/fine e sincronizzazione dei sottotitoli
+198. Cambiare font e dimensioni dei sottotitoli
+199. Cambiare colore e sfondo dei sottotitoli
+200. Applicare modelli/preset di sottotitoli
+201. Animare i sottotitoli
+202. Evidenziare singole parole o termini con stili dinamici quando previsto
+203. Applicare sottotitoli parola per parola/effetto karaoke dove disponibile
+204. Generare/riconoscere testi musicali (Auto Lyrics, dove supportato)
+205. Trascrivere video/audio in testo
+206. Modificare il video a partire dalla trascrizione (transcript-based editing)
+207. Rimuovere pause e parole riempitive attraverso editing della trascrizione (dove disponibile)
+208. Rilevare/differenziare parlanti nei sottotitoli se previsto dalla versione/regione
+209. Importare sottotitoli SRT tramite Web/Desktop
+210. Importare ulteriori formati di sottotitoli dove previsti (TXT, ASS, LRC: supporto dipendente dalla modalità)
+211. Esportare sottotitoli separati in formati supportati (per esempio SRT, opzione variabile)
+212. Tradurre sottotitoli con AI nei linguaggi supportati
+213. Generare sottotitoli bilingui o localizzati dove previsto
+214. Correggere tempi e testi dopo la traduzione
+
+==============================================================================
+13. AUDIO: MONTAGGIO E MIX (31 voci)
+==============================================================================
+215. Aggiungere musica al progetto
+216. Aggiungere effetti sonori
+217. Importare tracce audio proprie
+218. Estrarre audio da un video
+219. Staccare/separare audio e video per l'editing
+220. Registrare una voce fuori campo (voiceover)
+221. Tagliare una clip audio
+222. Dividere una clip audio
+223. Spostare l'audio in timeline
+224. Duplicare suoni o segmenti audio
+225. Miscelare più tracce audio
+226. Regolare volume delle singole clip
+227. Regolare volume della colonna sonora
+228. Aggiungere fade-in audio
+229. Aggiungere fade-out audio
+230. Regolare velocità dell'audio
+231. Regolare pitch/altezza tonale
+232. Rilevare automaticamente battiti/beat musicali
+233. Sincronizzare tagli con battiti musicali
+234. Normalizzare livello audio/volume
+235. Ridurre rumore di fondo (noise reduction)
+236. Migliorare la chiarezza della voce (Enhance Voice)
+237. Ridurre eco e difetti vocali negli strumenti previsti
+238. Isolare voce da accompagnamento musicale (Vocal Isolation)
+239. Rimuovere la voce da un brano quando lo strumento lo consente
+240. Applicare effetti vocali (Voice Changer)
+241. Usare filtri vocali, per esempio robot/grave/acuto, dal catalogo disponibile
+242. Generare voce da testo (Text-to-Speech)
+243. Selezionare voci sintetiche e lingue disponibili
+244. Creare sound effects con AI dai prompt/contenuti, se abilitato
+245. Generare musica AI dai prompt, se abilitato
+
+==============================================================================
+14. STRUMENTI AI PER MONTAGGIO AUTOMATICO (24 voci)
+==============================================================================
+246. AutoCut: montaggio automatico da clip grezze
+247. AutoCut: individuazione tagli secondo il ritmo
+248. AutoCut: sincronizzazione clip con musica
+249. AutoCut: montaggio da modelli e beat template
+250. AI Clipper: selezionare spezzoni/highlight più rilevanti
+251. Long Video to Shorts: ricavare clip brevi da video lunghi
+252. Rilevazione di passaggi e scene per il montaggio automatico
+253. Rimozione di pause/silenzi tramite strumenti assistiti
+254. Montaggio assistito da trascrizione
+255. AI Auto Reframe per formati diversi
+256. AI Eye Contact per orientare lo sguardo verso la camera (dove disponibile)
+257. AI Stabilization: ridurre tremolii
+258. AI Enhance/Video Enhancer: migliorare chiarezza e definizione
+259. AI Relight: compensare illuminazione problematica
+260. AI Video Translator: tradurre video
+261. AI dubbing: localizzare voce/parlato dove disponibile
+262. AI Lip Sync: sincronizzare movimenti della bocca e audio
+263. AI Remove: cancellare elementi indesiderati in video/immagini
+264. AI Text Remover: rimuovere testo da immagini/video secondo strumento
+265. AI People Remover: rimuovere persone da fotografie quando previsto
+266. AI Inpainting: ricostruire zone modificate
+267. AI background removal: isolare soggetti
+268. AI video upscaling: migliorare risoluzione/dettaglio in strumenti dedicati
+269. AI Video to Anime: conversione stilistica con strumenti dedicati
+
+==============================================================================
+15. AI GENERATIVA VIDEO, STORY E PERSONAGGI (21 voci)
+==============================================================================
+270. Generare video da prompt testuale (Text-to-Video)
+271. Generare video a partire da una o più immagini (Image-to-Video)
+272. Generare un video a partire da un argomento/idea (AI Story Maker)
+273. Generare/espandere una sceneggiatura con AI Writer
+274. Script-to-Video: trasformare uno script in sequenza di scene
+275. Usare un AI storyboard come base di progettazione
+276. Generare o selezionare visual per ogni scena
+277. Applicare stili visivi ai filmati generati
+278. Integrare clip AI nella timeline di editing tradizionale
+279. Usare modelli Seedance integrati nelle interfacce che li espongono
+280. Utilizzare un AI Avatar come presentatore
+281. Selezionare avatar dal catalogo disponibile
+282. Sincronizzare voce/audio e avatar
+283. Creare personaggi parlanti a partire da fotografie (Talking Photo)
+284. Applicare AI Dialogue Scene per scene di conversazione
+285. Applicare Mimic Motion per trasferire/imitare movimenti (dove supportato)
+286. Personalizzare voce e testo degli avatar
+287. Generare voiceover sintetici da uno script
+288. Generare musica/soundtrack con AI negli strumenti abilitati
+289. Generare una scena e rifinirla con tagli, effetti, musica e titoli
+290. Usare template AI per produrre montaggi da materiali inseriti
+
+==============================================================================
+16. FOTOGRAFIA E MODIFICA IMMAGINI (30 voci)
+==============================================================================
+291. Importare una foto nell'editor foto o video
+292. Ritagliare una fotografia
+293. Ridimensionare un'immagine
+294. Ruotare e capovolgere una fotografia
+295. Aggiungere testo a una fotografia
+296. Aggiungere stickers ed elementi grafici a una foto
+297. Applicare filtri fotografici
+298. Correggere luminosità/contrasto/saturazione di una foto
+299. Ritoccare ritratti mediante strumenti disponibili
+300. Applicare smoothing/levigatura pelle quando previsto
+301. Applicare trucco virtuale/Makeup quando previsto
+302. Usare auto enhancement fotografico AI
+303. Aumentare definizione e risoluzione con AI Image Upscaler
+304. Rimuovere lo sfondo da una fotografia
+305. Sostituire lo sfondo di una foto
+306. Generare uno sfondo fotografico da prompt
+307. Rimuovere oggetti indesiderati con AI Remove
+308. Rimuovere testo da una foto con AI Text Remover
+309. Rimuovere persone indesiderate dove supportato
+310. Utilizzare AI Inpainting per ricostruire aree
+311. Espandere i bordi della foto con AI Outpainting
+312. Fare trasformazioni image-to-image/trasferimento di stile
+313. Generare immagini da testo (Text-to-Image)
+314. Generare immagini con immagini di riferimento quando supportato
+315. Applicare look cartoon/illustrazione/3D con strumenti AI
+316. Creare ritagli di volti (Face Cutout)
+317. Creare foto prodotto con sfondi costruiti/AI
+318. Cambiare l'abbigliamento in un'immagine tramite AI dove previsto
+319. Realizzare un collage/slideshow animando più foto
+320. Creare effetti 3D Zoom su foto
+
+==============================================================================
+17. DESIGN GRAFICO, GRAFICHE E ASSET (13 voci)
+==============================================================================
+321. Creare materiali grafici nei tool AI Design/Design Studio (se disponibili)
+322. Creare locandine/poster mediante tool dedicati
+323. Creare miniature/thumbnail per video
+324. Creare elementi grafici sovrapposti ai video
+325. Generare adesivi tramite prompt AI
+326. Usare stickers statici
+327. Usare stickers animati
+328. Generare illustrazioni e artwork AI
+329. Generare un'immagine/logo tramite AI Logo Generator
+330. Progettare grafiche per pubblicità e contenuti social
+331. Creare meme tramite strumenti dedicati
+332. Sovrapporre testi, fotografie, forme/elementi disponibili
+333. Esportare immagini elaborate nei formati consentiti dallo strumento
+
+==============================================================================
+18. REGISTRAZIONE VIDEO E PROMPTER (13 voci)
+==============================================================================
+334. Registrare una voce tramite microfono nell'editor
+335. Registrare video/webcam nell'editor/strumenti web supportati
+336. Registrare schermo intero tramite Screen Recorder
+337. Registrare una finestra specifica tramite Screen Recorder
+338. Registrare un'area dello schermo tramite Screen Recorder
+339. Combinare schermo e webcam negli strumenti che lo consentono
+340. Importare subito la registrazione nell'editor
+341. Usare il teleprompter integrato nell'app Mobile
+342. Scrivere/incollare uno script nel teleprompter
+343. Visualizzare testo scorrevole durante la ripresa
+344. Regolare posizione e dimensioni della finestra teleprompter dove disponibile
+345. Usare camera anteriore o posteriore in modalità teleprompter Mobile
+346. Modificare il video registrato con titoli/sottotitoli
+
+==============================================================================
+19. MODELLI E AUTOMAZIONI CREATIVE (12 voci)
+==============================================================================
+347. Esplorare modelli video del catalogo CapCut
+348. Cercare template per categoria/trend quando presente
+349. Aprire e visualizzare l'anteprima di un modello
+350. Applicare un modello sostituendo clip/immagini personali
+351. Usare modelli verticali per TikTok/Reels/Shorts
+352. Modificare quanto consentito da un template (media, testo, audio)
+353. Esportare un video realizzato tramite template
+354. Creare un modello riutilizzabile come creator idoneo
+355. Pubblicare un template nella galleria pubblica se creator autorizzato
+356. Condividere il modello attraverso le modalità previste
+357. Usare AI templates per montaggio/generazione automatizzati
+358. Accedere a modelli premium con piano idoneo
+
+==============================================================================
+20. PROGETTI, CLOUD, TEAM E RISORSE (13 voci)
+==============================================================================
+359. Salvare e riaprire progetti di montaggio
+360. Usare CapCut Space/cloud storage, secondo piano
+361. Sincronizzare progetti e file tra dispositivi dove supportato
+362. Aprire un progetto cloud da Desktop/Web/Mobile compatibili
+363. Condividere contenuti/progetti secondo le opzioni disponibili
+364. Usare funzioni di collaborazione per team nei piani compatibili
+365. Usare modelli/template condivisi dal team dove supportato
+366. Usare librerie di brand o risorse del marchio nei piani compatibili
+367. Usare funzioni di revisione/collaborazione dove supportate
+368. Consultare disponibilità o restrizioni degli asset premium
+369. Consultare condizioni di licenza di musica e media
+370. Eseguire verifiche di copyright supportate prima dell'export
+371. Regolare impostazioni di performance/proxy in Desktop dove previste
+
+==============================================================================
+21. ESPORTAZIONE, CONVERSIONE E DISTRIBUZIONE (23 voci)
+==============================================================================
+372. Esportare un video finito
+373. Selezionare la cartella di destinazione su Desktop
+374. Impostare nome/titolo del video
+375. Scegliere la risoluzione di output disponibile
+376. Esportare fino al 4K se dispositivo/piano/contenuto lo consentono
+377. Selezionare frame rate/fps supportati (per esempio fino a 60 fps, secondo versione)
+378. Cambiare bitrate dell'esportazione
+379. Selezionare codec video tra quelli disponibili
+380. Esportare video MP4
+381. Esportare video MOV dove supportato
+382. Regolare rapporto di aspetto prima dell'export
+383. Modificare/copertina/thumbnail del video ove previsto
+384. Esportare soltanto l'audio
+385. Esportare l'audio in MP3 dove supportato
+386. Esportare l'audio in WAV dove supportato
+387. Esportare l'audio in FLAC dove supportato
+388. Esportare sottotitoli SRT negli strumenti compatibili
+389. Comprimere un video con strumenti dedicati
+390. Convertire video in MP4 con converter dedicato
+391. Condividere/pubblicare tramite scorciatoie TikTok dove presenti
+392. Condividere/pubblicare tramite scorciatoie YouTube dove presenti
+393. Selezionare parametri di pubblicazione supportati nella condivisione diretta
+394. Creare GIF tramite tool AI GIF dedicato, laddove disponibile
+
+==============================================================================
+22. FUNZIONI AI E STRUMENTI WEB SPECIALIZZATI (CATALOGO ESTESO) (37 voci)
+==============================================================================
+395. AI Photo Editor (ritocco e modifiche guidate)
+396. AI Image Generator (da prompt)
+397. AI Image-to-Image Generator (variazione/trasferimento stile)
+398. AI Image Expander (outpainting)
+399. AI Image Upscaler (miglioramento risoluzione foto)
+400. AI Video Generator (text-to-video/image-to-video)
+401. AI Video Enhancer (miglioramento video)
+402. AI Video Translator (traduzione contenuto video)
+403. AI Voice Generator (sintesi vocale)
+404. AI Sound Effects Generator (effetti audio)
+405. AI Music Generator (musica generata)
+406. AI Story Generator (generazione storie/script)
+407. AI Design Studio (design da prompt)
+408. AI Dialogue Scene (scene dialogate generate)
+409. AI Avatar Generator (presentatori digitali)
+410. AI Lip Sync (allineamento labiale)
+411. AI Remove (rimozione di elementi)
+412. AI Text Remover (rimozione testo)
+413. AI People Remover (rimozione persone)
+414. AI Inpainting (ricostruzione elementi)
+415. Image Background Remover
+416. Video Background Remover
+417. Face Cutout
+418. Video to Text / Transcribe Video to Text
+419. Video Transcript Editing
+420. Online Screen Recorder
+421. Online Audio Editor / Audio Mixer
+422. Voice Enhancer e Voice Filters
+423. Online Video Trimmer
+424. Video Compressor
+425. Video to MP4 Converter
+426. AI GIF Generator
+427. Meme Maker
+428. Video to Anime
+429. Super Slow Motion
+430. 3D Zoom / Photo Animation
+431. Teleprompter Mobile
+
+==============================================================================
+TOTALE: 431 voci descrittive in 22 sezioni.
+==============================================================================
+
+NOTE SULLA COMPLETEZZA E SULLE LICENZE
+1. Il catalogo dei singoli filtri, preset, effetti, canzoni e template cambia di frequente: non e' realisticamente enumerabile in modo permanente.
+2. 'Royalty-free' e 'uso commerciale' non significano che ogni asset sia liberamente riutilizzabile ovunque: verificare la licenza del singolo media e la piattaforma di destinazione.
+3. Per sapere esattamente cosa e' disponibile nel TUO account, serve controllare la versione dell'app, il sistema operativo, la regione e il piano.
+4. Funzioni come AI Video Generator, Seedance o AI Design possono cambiare nome, modello sottostante, crediti e disponibilita'.
+
+FONTI UFFICIALI (PAGINE E GUIDE CAPCUT)
+[01] Guida ufficiale all'editor (montaggio, audio, keyframe, colore, export)
+     https://www.capcut.com/it-it/resource/how-to-use-capcut
+[02] CapCut Desktop (ricerca intelligente, grafici keyframe, ruote colore, AI)
+     https://www.capcut.com/tools/desktop-video-editor
+[03] Hub strumenti video
+     https://www.capcut.com/tools/video
+[04] Hub strumenti audio
+     https://www.capcut.com/tools/audio
+[05] Hub strumenti AI
+     https://www.capcut.com/tools/ai-tools
+[06] Suite AI annunciata ufficialmente
+     https://www.capcut.com/it-it/resource/ai-editing-the-capcut-way
+[07] Auto Cut: funzionalita' e disponibilita'
+     https://www.capcut.com/it-it/help/auto-cut-in-capcut
+[08] Sottotitoli automatici
+     https://www.capcut.com/help/how-to-recognise-subtitles
+[09] Importazione sottotitoli
+     https://www.capcut.com/help/how-to-import-subtitles
+[10] Color grading
+     https://www.capcut.com/it-it/resource/capcut-color-grading
+[11] Editing audio
+     https://www.capcut.com/resource/extract-audio-from-video
+[12] Editor foto mobile
+     https://www.capcut.com/tools/photo-editing-app
+[13] Screen recorder
+     https://www.capcut.com/tools/online-screen-recorder
+[14] Teleprompter mobile
+     https://www.capcut.com/it-it/tools/teleprompt-app
+[15] Creazione di template
+     https://www.capcut.com/it-it/help/how-to-create-templates-in-capcut
+[16] CapCut Standard e Pro
+     https://www.capcut.com/it-it/help/capcut-standard-vs-pro
+[17] Hub generale delle funzionalita' AI
+     https://www.capcut.com/features
+
+FINE DEL CATALOGO
