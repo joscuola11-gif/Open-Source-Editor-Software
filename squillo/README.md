@@ -61,7 +61,23 @@ Scarica dalla pagina **Releases** del repository:
 
 Costruirli da soli: `npm ci && npm run dist:win` (o `dist:mac`, `dist:linux`).
 
-### Telefono (Android e iPhone)
+### Android: l'APK
+
+`Squillo-*-Android.apk` (nella pagina **Releases**, oppure `npm run dist:apk` per costruirlo da soli: serve Linux con
+`aapt apksigner zipalign dalvik-exchange android-sdk-platform-23 default-jdk-headless`, niente Android Studio).
+
+1. Scarica il file sul telefono e aprilo. Android chiede di consentire l'installazione **da questa fonte**: consenti.
+2. Se compare l'avviso di Play Protect («app non verificata»): **Installa comunque**. È normale: l'app non è su Google Play
+   e la firma è di prova (`android/debug.keystore`, password `android`). Gli aggiornamenti si installano sopra solo se firmati
+   con la stessa chiave.
+3. Alla prima chiamata Android chiede il permesso per **camera e microfono**: consenti.
+
+L'APK contiene la stessa app web (nessun sito da aprire, funziona dall'icona) dentro una finestra Android (WebView). Richiede
+Android 7 o successivo. **Non è stato provato su un telefono vero**: l'ho costruito e controllato (struttura, permessi,
+firma, allineamento) ma qui non c'è un telefono o un emulatore. Da Android **non si può condividere lo schermo** (la WebView non lo
+permette): si può invece vedere lo schermo condiviso da un computer.
+
+### Telefono (Android e iPhone) come web-app
 
 Su telefono Squillo è una **web-app installabile**: la stessa app, aperta da un indirizzo web, con la sua icona nella Home.
 Camera e microfono richiedono **HTTPS**, quindi la cartella `dist/` va pubblicata su un indirizzo `https://`. Il modo più
@@ -94,7 +110,7 @@ Fly.io o un tuo server). In *Avanzate* puoi indicare i tuoi server TURN, utili c
   un servizio di notifiche push).
 - **Dal telefono non si può condividere lo schermo**: i browser dei telefoni (Chrome per Android, Safari per iPhone) non lo
   permettono. Il telefono può però **vedere** lo schermo condiviso da un computer. Per condividere dal telefono servirebbe un'app
-  nativa (non c'è, e non si può costruire né provare per iPhone senza un Mac e un account Apple a pagamento).
+  nativa con servizio di cattura (non c'è; per iPhone non si può costruire né provare senza un Mac e un account Apple a pagamento).
 - Il servizio pubblico gratuito e i suoi server di appoggio sono «al meglio delle possibilità».
 - Provato con **Chromium ed Electron su Linux** con camera/microfono finti. **Non provato**: Windows e macOS veri, iPhone e
   Android veri, Safari, Firefox, reti reali con perdite di pacchetti (il regolatore è però provato con dati simulati).

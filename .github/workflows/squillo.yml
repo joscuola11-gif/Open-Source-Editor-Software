@@ -75,6 +75,27 @@ jobs:
             squillo/release/*.AppImage
           if-no-files-found: error
 
+  apk:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: squillo/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends aapt apksigner zipalign dalvik-exchange android-sdk-platform-23
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - run: npm run dist:apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: squillo-android
+          path: squillo/release/*.apk
+          if-no-files-found: error
+
   web:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_web }}
     needs: test
@@ -104,8 +125,8 @@ jobs:
         uses: actions/deploy-pages@v4
 
   release:
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/squillo-v') || inputs.release_tag != '') }}
+    needs: [build, apk]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.apk.result == 'success' && (startsWith(github.ref, 'refs/tags/squillo-v') || inputs.release_tag != '') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -133,6 +154,9 @@ jobs:
 
             Alla prima apertura Windows può mostrare «Windows ha protetto il PC» (programma non firmato con un certificato a
             pagamento): **Ulteriori informazioni → Esegui comunque**.
+
+            ### Android
+            - **`Squillo-*-Android.apk`**: installa il file (consenti l'installazione da fonti sconosciute). Firma di prova, non provato su telefoni veri.
 
             ### Altri sistemi
             Pacchetti macOS (non firmato: clic destro → Apri) e Linux (AppImage). Non sono stati provati su macchine reali.

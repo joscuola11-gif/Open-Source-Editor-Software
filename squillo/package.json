@@ -16,7 +16,8 @@
     "test:desktop": "xvfb-run -a node --test --test-concurrency=1 \"tests/desktop/*.test.js\"",
     "dist:win": "npm run build && electron-builder --win",
     "dist:linux": "npm run build && electron-builder --linux",
-    "dist:mac": "npm run build && electron-builder --mac"
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:apk": "npm run build && bash tools/build-apk.sh"
   },
   "devDependencies": {
     "electron": "^45.4.1",
