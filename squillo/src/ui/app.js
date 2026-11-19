@@ -391,10 +391,12 @@ export class App {
     } else if (state === STATE.ACTIVE) {
       this.ringer.stop();
       this.#keepAwake();
+      window.squilloDesktop?.keepAwake?.(true);
       if (this.showStats) this.#renderStats();
     } else if (state === STATE.IDLE) {
       this.ringer.stop();
       this.#releaseAwake();
+      window.squilloDesktop?.keepAwake?.(false);
     }
     this.#syncCallInput();
     this.#syncVideos();
@@ -606,7 +608,7 @@ export class App {
     const menu = h('div', { class: 'screen-menu', role: 'dialog', 'aria-label': 'Condividi lo schermo' },
       h('h3', {}, 'Cosa stai mostrando?'),
       ...modeBtns,
-      h('label', { class: 'check' }, audioBox, h('span', {}, 'Condividi anche l’audio del computer', h('small', {}, ' (dove il sistema lo permette)'))),
+      h('label', { class: 'check' }, audioBox, h('span', {}, 'Condividi anche l’audio del computer', h('small', {}, ' (solo Windows e Chrome/Edge; usa le cuffie per evitare l’eco)'))),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', onClick: () => this.#closeScreenMenu() }, 'Annulla'),
         h('button', { class: 'btn primary', id: 'btn-share-go', type: 'button', onClick: async () => {

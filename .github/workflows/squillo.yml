@@ -1,0 +1,142 @@
+# Squillo (videochiamate): prove, pacchetti per computer e, a richiesta, pubblicazione web per il telefono.
+#
+# Avvio manuale: «Actions» → «Squillo» → «Run workflow».
+#   - release_tag: nome della Release da creare (es. squillo-v0.1.0). Vuoto = solo «Artifacts».
+#   - deploy_web: pubblica l'app su GitHub Pages (prima: Settings → Pages → Source: GitHub Actions).
+name: Squillo
+
+on:
+  pull_request:
+    paths: ['squillo/**', '.github/workflows/squillo.yml']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Nome della release da creare (es. squillo-v0.1.0). Vuoto = solo artifacts.'
+        required: false
+        default: ''
+      deploy_web:
+        description: 'Pubblica la versione web (telefono) su GitHub Pages'
+        type: boolean
+        default: false
+  push:
+    tags: ['squillo-v*']
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: squillo
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: squillo/package-lock.json
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - run: npm test
+      - run: npm run build
+      - name: Chromium per le prove con due partecipanti
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"os":"windows-latest","script":"dist:win","flags":"-c.win.signAndEditExecutable=true"}]}' || '{"include":[{"os":"windows-latest","script":"dist:win","flags":"-c.win.signAndEditExecutable=true"},{"os":"macos-latest","script":"dist:mac","flags":""},{"os":"ubuntu-latest","script":"dist:linux","flags":""}]}') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: squillo/package-lock.json
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Build
+        shell: bash
+        run: npm run ${{ matrix.script }} -- ${{ matrix.flags }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: squillo-${{ matrix.os }}
+          path: |
+            squillo/release/*.exe
+            squillo/release/*.zip
+            squillo/release/*.AppImage
+          if-no-files-found: error
+
+  web:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_web }}
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: squillo/package-lock.json
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: squillo/dist
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' && (startsWith(github.ref, 'refs/tags/squillo-v') || inputs.release_tag != '') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: pacchetti
+          pattern: squillo-*
+          merge-multiple: true
+      - run: ls -la pacchetti
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Squillo ${{ inputs.release_tag || github.ref_name }}
+          files: pacchetti/*
+          fail_on_unmatched_files: true
+          body: |
+            **Squillo** — videochiamate 1 a 1 con condivisione dello schermo.
+
+            ### Windows
+            - **`Squillo-Installer-*-x64.exe`**: installer con menu Start e disinstallatore.
+            - **`Squillo-*-Windows-x64.zip`**: versione portatile. Estrai tutto in una cartella e avvia `Squillo.exe`.
+
+            Alla prima apertura Windows può mostrare «Windows ha protetto il PC» (programma non firmato con un certificato a
+            pagamento): **Ulteriori informazioni → Esegui comunque**.
+
+            ### Altri sistemi
+            Pacchetti macOS (non firmato: clic destro → Apri) e Linux (AppImage). Non sono stati provati su macchine reali.
+
+            ### Telefono
+            Squillo funziona anche da telefono come web-app installabile: vedi il README della cartella `squillo`.
+        

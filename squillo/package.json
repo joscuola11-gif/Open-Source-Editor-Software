@@ -18,14 +18,88 @@
     "dist:linux": "npm run build && electron-builder --linux",
     "dist:mac": "npm run build && electron-builder --mac"
   },
-  "dependencies": {
-    "peerjs": "^1.5.4"
-  },
   "devDependencies": {
     "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0",
     "peer": "^1.0.2",
+    "peerjs": "^1.5.4",
     "playwright": "1.63.0"
+  },
+  "author": "Squillo contributors",
+  "homepage": "https://github.com/joscuola11-gif/open-source-editor-software/tree/main/squillo",
+  "build": {
+    "appId": "app.squillo.chiamate",
+    "productName": "Squillo",
+    "copyright": "Copyright © 2026 Squillo contributors — MIT",
+    "directories": {
+      "output": "release",
+      "buildResources": "desktop/build"
+    },
+    "files": [
+      "desktop/main.cjs",
+      "desktop/preload.cjs",
+      "desktop/build/icon.png",
+      "dist/**",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "desktop/build/icon.png",
+      "signAndEditExecutable": false,
+      "artifactName": "Squillo-${version}-Windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Squillo",
+      "language": "1040",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Squillo-Installer-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "desktop/build/icon.png",
+      "category": "Network",
+      "artifactName": "Squillo-${version}-Linux-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "icon": "desktop/build/icon.png",
+      "category": "public.app-category.social-networking",
+      "identity": null,
+      "artifactName": "Squillo-${version}-macOS-${arch}.${ext}",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Squillo usa la camera per le videochiamate.",
+        "NSMicrophoneUsageDescription": "Squillo usa il microfono per le chiamate."
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joscuola11-gif/open-source-editor-software.git",
+    "directory": "squillo"
   }
 }

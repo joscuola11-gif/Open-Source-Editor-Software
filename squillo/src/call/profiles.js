@@ -60,8 +60,11 @@ export const initialState = (level = 0) => ({ level, up: 0, down: 0 });
 export function nextState(state, sample, ladder, { downAfter = 2, upAfter = 6 } = {}) {
   const max = ladder.length - 1;
   const cur = ladder[state.level];
-  const limited = sample.limitation === 'cpu' || sample.limitation === 'bandwidth';
-  const starved = Number.isFinite(sample.available) && sample.available < cur.bitrate * 0.75;
+  const known = Number.isFinite(sample.available);
+  // «bandwidth» lo segnala anche il tetto di bitrate che abbiamo messo noi: conta solo se è la rete a non bastare
+  const limitedByNetwork = sample.limitation === 'bandwidth' && (!known || sample.available < cur.bitrate * 1.1);
+  const limited = sample.limitation === 'cpu' || limitedByNetwork;
+  const starved = known && sample.available < cur.bitrate * 0.75;
   const lossy = (sample.loss ?? 0) > 0.08;
   if (limited || starved || lossy) {
     const down = state.down + 1;

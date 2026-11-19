@@ -69,6 +69,23 @@ test('regolatore: scende dopo due campioni cattivi, risale solo con margine e do
   assert.equal(nextState(s, good, L).level, 0, 'non va sotto lo zero');
 });
 
+test('regolatore: il «limite di banda» causato dal nostro stesso tetto non fa scendere la qualità', () => {
+  const L = CAMERA_LADDER.auto;
+  let s = initialState(0);
+  // il codificatore dice «bandwidth» perché sta rispettando il tetto che gli abbiamo dato, ma la rete ha 4 Mbit/s liberi
+  const capped = { limitation: 'bandwidth', available: 4_000_000, loss: 0, rtt: 0.02 };
+  for (let i = 0; i < 50; i++) s = nextState(s, capped, L);
+  assert.equal(s.level, 0, 'resta al massimo');
+  // se invece la banda disponibile è davvero sotto il tetto, scende
+  const real = { limitation: 'bandwidth', available: 800_000, loss: 0, rtt: 0.02 };
+  s = nextState(nextState(initialState(0), real, L), real, L);
+  assert.equal(s.level, 1);
+  // senza il dato della banda disponibile si fida del codificatore
+  const unknown = { limitation: 'bandwidth', available: null, loss: 0, rtt: 0.02 };
+  s = nextState(nextState(initialState(0), unknown, L), unknown, L);
+  assert.equal(s.level, 1);
+});
+
 test('regolatore: non risale se la rete non ha margine, non scende oltre il fondo, CPU e perdite contano', () => {
   const L = CAMERA_LADDER.auto;
   let s = initialState(2);
@@ -173,4 +190,39 @@ test('formati: orologio e velocità', () => {
   assert.equal(formatBitrate(4_100_000), '4,1 Mbit/s');
   assert.equal(formatBitrate(250_400), '250 kbit/s');
   assert.equal(formatBitrate(NaN), '–');
+});
+
+import { cleanServer, peerOptions, DEFAULT_SERVER, isDefaultServer } from '../../src/net/config.js';
+import { addRecent, displayName } from '../../src/lib/prefs.js';
+
+test('centralino: indirizzi scritti a mano vengono ripuliti, quelli assurdi tornano al predefinito', () => {
+  assert.deepEqual(cleanServer(undefined), { ...DEFAULT_SERVER });
+  assert.deepEqual(cleanServer({ host: 'https://mio.server.it/qualcosa', port: '8080', path: 'chiamate', secure: false }), { host: 'mio.server.it', port: 8080, path: '/chiamate', secure: false, key: 'peerjs' });
+  assert.equal(cleanServer({ host: 'x y' }).host, DEFAULT_SERVER.host, 'spazi: non è un indirizzo');
+  assert.equal(cleanServer({ host: '' }).host, DEFAULT_SERVER.host);
+  assert.equal(cleanServer({ host: '<script>' }).host, DEFAULT_SERVER.host);
+  assert.equal(cleanServer({ host: 'a.it', port: 'abc' }).port, 443);
+  assert.equal(cleanServer({ host: 'a.it', port: 99999, secure: false }).port, 80);
+  assert.equal(cleanServer({ host: 'a.it', path: '/a b?c' }).path, '/abc', 'caratteri strani tolti dal percorso');
+  assert.equal(isDefaultServer(cleanServer(null)), true);
+  assert.equal(isDefaultServer(cleanServer({ host: 'a.it' })), false);
+  const o = peerOptions({ host: 'a.it' }, [{ urls: 'turn:t.it:3478', username: 'u', credential: 'c' }]);
+  assert.equal(o.config.iceServers.length, 1);
+  assert.equal(peerOptions({ host: 'a.it' }).config, undefined, 'senza server di appoggio propri restano quelli di PeerJS');
+  assert.equal(peerOptions({ host: 'a.it' }, []).config, undefined);
+});
+
+test('cronologia: la più recente in cima, tetto massimo, nomi', () => {
+  let list = [];
+  for (let i = 0; i < 60; i++) list = addRecent(list, { code: String(100000000 + i), dir: 'out', ts: i });
+  assert.equal(list.length, 40);
+  assert.equal(list[0].code, '100000059');
+  const e = addRecent([], { code: '123456789', name: 'x'.repeat(100), dir: 'in', dur: 12.6 })[0];
+  assert.equal(e.name.length, 40);
+  assert.equal(e.dur, 13);
+  const fmt = (c) => `#${c}`;
+  assert.equal(displayName('1', { 1: 'Mamma' }, [], fmt), 'Mamma', 'il nome dato da me vince');
+  assert.equal(displayName('2', {}, [{ code: '2', name: 'Luca' }], fmt), 'Luca', 'poi quello dichiarato dall\'altro');
+  assert.equal(displayName('3', {}, [], fmt), '#3', 'infine il codice');
+  assert.equal(addRecent(null, { code: '1', dir: 'in' }).length, 1, 'lista rovinata non rompe');
 });

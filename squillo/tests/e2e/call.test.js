@@ -380,3 +380,109 @@ test('chiamate simultanee fra le stesse due persone: ne nasce una sola', async (
   await a.context.close();
   await b.context.close();
 });
+
+test('su una rete buona la qualità non peggiora da sola e la camera migliora col tempo', async () => {
+  const { a, b } = await pair();
+  await connect(a, b);
+  await sleep(11000);
+  const lv = await b.page.evaluate(() => window.__squillo.lastStats?.camLevel);
+  assert.equal(lv, 0, 'il regolatore resta al livello migliore');
+  const { w } = await inbound(a);
+  assert.ok(w >= 320, `la risoluzione ricevuta sale (${w})`);
+  assert.deepEqual([...a.errors, ...b.errors], []);
+});
+
+test('impostazioni: si apre, il centralino non valido è ripulito, il server di appoggio sbagliato è rifiutato', async () => {
+  const a = await env.person(A, { name: 'Anna' });
+  await a.page.waitForFunction(() => window.__squillo.line.status === 'online', null, { timeout: 20000 });
+  await a.page.click('#btn-settings');
+  await a.page.waitForSelector('dialog.settings[open]');
+  assert.ok((await a.page.textContent('dialog.settings')).includes('Centralino'));
+  assert.equal(await a.page.inputValue('#s-host'), '127.0.0.1');
+  // elenco dei dispositivi: ci sono la camera e il microfono finti
+  assert.ok((await a.page.locator('#s-mic option').count()) >= 2);
+  assert.ok((await a.page.locator('#s-cam option').count()) >= 2);
+  // JSON dei server di appoggio sbagliato: non si salva e si spiega (sta nelle «Avanzate», chiuse di default)
+  assert.equal(await a.page.locator('#s-ice').isVisible(), false);
+  await a.page.click('dialog.settings summary');
+  await a.page.fill('#s-ice', 'questo non è json');
+  await a.page.click('#s-save');
+  await waitToast(a, /lista JSON valida/);
+  assert.equal(await a.page.locator('dialog.settings[open]').count(), 1, 'il dialogo resta aperto');
+  // «servizio predefinito» riporta i valori pubblici
+  await a.page.click('#s-reset');
+  assert.equal(await a.page.inputValue('#s-host'), '0.peerjs.com');
+  assert.equal(await a.page.inputValue('#s-port'), '443');
+  assert.equal(await a.page.isChecked('#s-secure'), true);
+  // salvare un centralino nostro: si ricollega e torna online
+  await a.page.fill('#s-host', '127.0.0.1');
+  await a.page.fill('#s-port', String(env.centralino.port));
+  await a.page.fill('#s-path', '/');
+  await a.page.uncheck('#s-secure');
+  await a.page.fill('#s-ice', '');
+  await a.page.click('#s-save');
+  await a.page.waitForSelector('dialog.settings', { state: 'hidden' });
+  await a.page.waitForFunction(() => window.__squillo.line.status === 'online', null, { timeout: 25000 });
+  const saved = await a.page.evaluate(() => JSON.parse(localStorage.getItem('squillo:v1')).server);
+  assert.equal(saved.host, '127.0.0.1');
+  assert.equal(saved.secure, false);
+  // il nome si ricorda
+  await a.page.fill('#my-name', 'Anna Rossi');
+  await a.page.reload();
+  await a.page.waitForFunction(() => window.__squillo?.line.status === 'online', null, { timeout: 30000 });
+  assert.equal(await a.page.inputValue('#my-name'), 'Anna Rossi');
+  assert.deepEqual(a.errors, []);
+});
+
+test('telefono: nessuno scorrimento orizzontale, controlli tutti raggiungibili, pulsante «gira camera»', async () => {
+  const ctx = await env.browser.newContext({
+    viewport: { width: 360, height: 700 },
+    isMobile: true,
+    hasTouch: true,
+    deviceScaleFactor: 2,
+    permissions: ['camera', 'microphone'],
+    userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36',
+  });
+  await ctx.addInitScript(([s]) => {
+    try {
+      if (!localStorage.getItem('squillo:v1')) localStorage.setItem('squillo:v1', JSON.stringify(s));
+    } catch {}
+  }, [{ code: '444444444', name: 'Telefono', server: { host: '127.0.0.1', port: env.centralino.port, path: '/', secure: false, key: 'peerjs' }, ice: JSON.stringify([{ urls: 'stun:127.0.0.1:3478' }]) }]);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await page.goto(env.url);
+  await page.waitForFunction(() => window.__squillo?.line.status === 'online', null, { timeout: 20000 });
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  assert.equal(await overflow(), 0, 'home senza scorrimento orizzontale');
+  const b = await env.person(B, { name: 'Bruno' });
+  await b.page.waitForFunction(() => window.__squillo.line.status === 'online', null, { timeout: 20000 });
+  await page.fill('#dial-input', B);
+  await page.click('#btn-call');
+  await b.page.waitForSelector('#btn-answer', { timeout: 15000 });
+  await b.page.click('#btn-answer');
+  await page.waitForFunction(() => window.__squillo.calls.state === 'active', null, { timeout: 25000 });
+  assert.equal(await overflow(), 0, 'chiamata senza scorrimento orizzontale');
+  assert.ok(await page.locator('#c-flip').isVisible(), 'sul telefono si può girare la camera');
+  const vp = page.viewportSize();
+  for (const id of ['mic', 'cam', 'screen', 'flip', 'speaker', 'stats', 'full', 'hangup']) {
+    const box = await page.locator(`#c-${id}`).boundingBox();
+    if (!box) continue; // il pulsante può essere nascosto dove non serve
+    assert.ok(box.x >= 0 && box.x + box.width <= vp.width && box.y >= 0 && box.y + box.height <= vp.height, `#c-${id} dentro lo schermo (${JSON.stringify(box)})`);
+    assert.ok(box.width >= 44 && box.height >= 44, `#c-${id} abbastanza grande per un dito`);
+  }
+  // l'incoming sul telefono è tutto visibile
+  await page.click('#c-hangup');
+  await page.waitForSelector('.home:not([hidden])');
+  await b.page.fill('#dial-input', '444 444 444');
+  await b.page.click('#btn-call');
+  await page.waitForSelector('#btn-answer', { timeout: 15000 });
+  for (const id of ['btn-decline', 'btn-answer-voice', 'btn-answer']) {
+    const box = await page.locator(`#${id}`).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= vp.width, `#${id} dentro lo schermo`);
+  }
+  await page.click('#btn-decline');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
