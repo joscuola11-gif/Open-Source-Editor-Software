@@ -63,6 +63,15 @@ scorciatoie chiamano le stesse funzioni. Nessun componente tiene copia dello sta
 il DOM per chiave (`id` del clip) e l'inspector aggiorna i valori dei controlli senza ricostruirli, così non
 si perde il focus durante un trascinamento.
 
+### Disposizione della finestra
+
+`workspace-layout.js` governa il pulsante «Layout». Non sposta mai nodi nel DOM (altrimenti il canvas e i media
+si reinizializzerebbero): scrive **attributi `data-*`** su `.app` e `.workspace` (disposizione, pannelli visibili,
+timeline) e variabili CSS (`--lib-w`, `--insp-w`); tutta la geometria sta in `styles.css` con `grid-template-areas`,
+solo sopra i 900 px. L'anteprima libera è la stessa sezione con `position: fixed` (`.preview.floating`): la barra
+del titolo e le maniglie sono sempre nel DOM e si mostrano solo in quella modalità. Stato e posizione stanno in
+`prefs` (`workspace`), vengono ripuliti e riportati dentro la finestra a ogni lettura e a ogni ridimensionamento.
+
 ## desktop — il programma per Windows/macOS/Linux
 
 `desktop/main.cjs` mostra `dist/ciak-studio.html` in una finestra Electron. La pagina è la stessa della versione
@@ -87,7 +96,7 @@ browser; il guscio aggiunge solo ciò che un browser non può fare.
 | --- | --- | --- |
 | Unitari | `tests/unit` | Operazioni di timeline, keyframe, formati, pixel, audio |
 | Fuzzing | `tests/unit/fuzz.test.js` | Sequenze casuali di operazioni: progetto sempre valido, undo/redo esatti |
-| E2E | `tests/e2e` | Chromium reale: import, riproduzione sincronizzata, interazione col mouse, pixel dell'anteprima, esportazione verificata con ffprobe/ffmpeg, ripristino, pacchetto `.ciak` verificato con un lettore ZIP esterno |
+| E2E | `tests/e2e` | Chromium reale: import, disposizione della finestra, riproduzione sincronizzata, interazione col mouse, pixel dell'anteprima, esportazione verificata con ffprobe/ffmpeg, ripristino, pacchetto `.ciak` verificato con un lettore ZIP esterno |
 | Desktop | `tests/desktop` | Electron reale (e impacchettato) in schermo virtuale: sicurezza, MP4 verificato con ffprobe e colori, persistenza |
 | Prestazioni | `tests/bench.js` | Tempi di logica e rendering (non asserisce: dipende dall'hardware) |
 

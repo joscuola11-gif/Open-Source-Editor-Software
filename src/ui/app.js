@@ -27,6 +27,7 @@ import { Library } from './library.js';
 import { PreviewView } from './preview-view.js';
 import { TimelineView } from './timeline-view.js';
 import { Inspector } from './inspector.js';
+import { WorkspaceLayout } from './workspace-layout.js';
 
 const SUBTITLE_STYLES = {
   classic: { size: 5.2, weight: 700, color: '#ffffff', stroke: { width: 0, color: '#000000' }, shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0 }, bg: { enabled: true, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 } },
@@ -54,6 +55,7 @@ const SHORTCUTS = [
   ['Ctrl+E', 'Esporta'],
   ['Maiusc+D', 'Mostra/nascondi statistiche prestazioni'],
   ['Esc', 'Deseleziona / annulla il trascinamento'],
+  ['Pulsante Layout', 'Sposta l’anteprima, nascondi pannelli, scegli una disposizione'],
   ['?', 'Questa guida'],
 ];
 
@@ -96,6 +98,7 @@ export class App {
     this.nameBtn = h('button', { class: 'project-name', type: 'button', title: 'Impostazioni del progetto', onClick: () => this.selection.clear() }, 'Nuovo progetto');
     this.saveLabel = h('span', { class: 'save-state', role: 'status', 'aria-live': 'polite' }, 'Salvato');
     this.themeBtn = h('button', { class: 'icon-btn', type: 'button', id: 'btn-theme', title: 'Cambia tema chiaro/scuro', 'aria-label': 'Cambia tema chiaro/scuro', onClick: () => this.actions.toggleTheme() }, icon(document.documentElement.dataset.theme === 'dark' ? 'sun' : 'moon', 18));
+    this.layoutBtn = h('button', { class: 'btn layout-btn', type: 'button', id: 'btn-layout', title: 'Layout: sposta l’anteprima e scegli la disposizione dei pannelli', 'aria-haspopup': 'menu', onClick: () => this.layout.openMenu() }, icon('layout', 16), h('span', { class: 'layout-btn-label' }, 'Layout'));
     const logo = h('div', { class: 'brand', 'aria-label': 'Ciak Studio' },
       h('span', { class: 'logo' }, (() => {
         const s = document.createElement('span');
@@ -107,6 +110,7 @@ export class App {
       logo, this.nameBtn,
       h('span', { class: 'tb-spacer' }),
       this.saveLabel,
+      this.layoutBtn,
       this.themeBtn,
       h('button', { class: 'icon-btn', type: 'button', id: 'btn-help', title: 'Guida e scorciatoie (?)', 'aria-label': 'Guida e scorciatoie', onClick: () => this.actions.showHelp() }, icon('help', 18)),
       h('button', { class: 'btn primary export-btn', type: 'button', id: 'btn-export', onClick: () => this.actions.openExport() }, icon('download', 16), 'Esporta'));
@@ -117,14 +121,18 @@ export class App {
     this.root.append(this.shell);
     this.shell.style.setProperty('--tl-h', `${clamp(prefs.get('tlHeight', 330), 200, 700)}px`);
     this.#initSplitter();
+    this.layout = new WorkspaceLayout(this, this.layoutBtn);
+  }
+
+  /** Altezza della timeline in pixel (il limite superiore dipende dalla disposizione scelta). */
+  setTimelineHeight(v) {
+    const hgt = clamp(Math.round(v), 180, Math.max(220, innerHeight - 260));
+    this.shell.style.setProperty('--tl-h', `${hgt}px`);
+    prefs.set('tlHeight', hgt);
   }
 
   #initSplitter() {
-    const set = (v) => {
-      const hgt = clamp(v, 180, Math.max(220, innerHeight - 260));
-      this.shell.style.setProperty('--tl-h', `${hgt}px`);
-      prefs.set('tlHeight', hgt);
-    };
+    const set = (v) => this.setTimelineHeight(v);
     this.splitter.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       const startY = e.clientY;

@@ -126,6 +126,10 @@ export function contextMenu(x, y, items) {
       menu.append(h('div', { class: 'ctx-sep', role: 'separator' }));
       continue;
     }
+    if (it.heading) {
+      menu.append(h('div', { class: 'ctx-heading', role: 'presentation' }, it.heading));
+      continue;
+    }
     menu.append(
       h(
         'button',

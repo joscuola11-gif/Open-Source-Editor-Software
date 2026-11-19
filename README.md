@@ -77,6 +77,16 @@ browser senza `ctx.filter`), ma non sono verificati su quei browser.
 - **Registrazione della voce** direttamente sulla timeline (voice-over)
 - Limiter integrato: niente distorsione quando si sommano più sorgenti
 
+**Disposizione della finestra (pulsante «Layout»)**
+- **Anteprima libera**: l'anteprima diventa una finestrella che trascini dove vuoi (dalla barra del titolo, anche con le
+  frecce) e ridimensioni da un angolo o da un bordo; doppio clic sulla barra (o il pulsante a destra) per riagganciarla.
+  Resta sempre raggiungibile: non può uscire dalla finestra del programma
+- **Disposizioni pronte**: classica, anteprima a sinistra, anteprima a destra, anteprima grande, solo anteprima, timeline grande
+- Libreria, proprietà e timeline si nascondono e si rimostrano singolarmente; i **divisori** fra i pannelli si
+  trascinano per allargarli (doppio clic: larghezza originale)
+- Le scelte vengono ricordate alla riapertura; «Ripristina il layout» rimette tutto com'era. Su finestre più strette
+  di 900 px resta la disposizione a colonne fissa, pensata per quel formato
+
 **Importazione, esportazione, progetto**
 - Importa video, audio e immagini (i formati letti dal browser) anche con trascinamento
 - Esporta **MP4 (H.264 + AAC)** nel programma desktop (WebM nel browser), 480p–1080p, 4 livelli di qualità, scegliendo
