@@ -80,6 +80,13 @@ function ffmpegPath() {
 }
 
 const CRF = { low: 26, medium: 22, high: 19, ultra: 16 };
+// codec video disponibili in ffmpeg incluso; `crf` è la scala H.264 e qui si converte nella scala di ciascun codec
+const VIDEO_CODECS = {
+  h264: { enc: 'libx264', crf: (c) => c, args: ['-preset', 'fast'] },
+  h265: { enc: 'libx265', crf: (c) => c + 4, args: ['-preset', 'fast', '-tag:v', 'hvc1'] },
+  vp9: { enc: 'libvpx-vp9', crf: (c) => c + 8, args: ['-row-mt', '1', '-deadline', 'good', '-cpu-used', '4'] },
+  av1: { enc: 'libaom-av1', crf: (c) => c + 12, args: ['-row-mt', '1', '-cpu-used', '8'] },
+};
 const savedFiles = new Set(); // solo i file che abbiamo scritto noi possono essere mostrati nella cartella
 let convertProc = null;
 let convertCancelled = false;
@@ -119,7 +126,11 @@ ipcMain.handle('ciak:convert-mp4', async (event, input, options = {}) => {
 
   const win = BrowserWindow.fromWebContents(event.sender);
   const name = safeName(options.name);
-  const container = options.container === 'mov' ? 'mov' : 'mp4'; // MOV: stessa codifica H.264/AAC, contenitore QuickTime
+  const container = ['mov', 'mkv', 'webm'].includes(options.container) ? options.container : 'mp4';
+  const codecId = VIDEO_CODECS[options.codec] ? options.codec : container === 'webm' ? 'vp9' : 'h264';
+  if (container === 'webm' && !['vp9', 'av1'].includes(codecId)) return { ok: false, error: 'WebM accetta solo VP9 o AV1.' };
+  if ((container === 'mp4' || container === 'mov') && !['h264', 'h265'].includes(codecId)) return { ok: false, error: 'MP4 e MOV accettano H.264 o H.265.' };
+  const customBitrate = Number(options.bitrate) > 0 ? Math.min(200_000_000, Math.max(200_000, Math.round(Number(options.bitrate)))) : 0;
   const fps = Math.min(120, Math.max(1, Math.round(Number(options.fps) || 30)));
   const duration = Number(options.duration) > 0 ? Number(options.duration) : 0;
   const crf = CRF[options.quality] ?? CRF.medium;
@@ -129,9 +140,9 @@ ipcMain.handle('ciak:convert-mp4', async (event, input, options = {}) => {
   if (!app.isPackaged && process.env.CIAK_TEST_SAVE_DIR) dest = path.join(process.env.CIAK_TEST_SAVE_DIR, `${name}.${container}`);
   else {
     const r = await dialog.showSaveDialog(win, {
-      title: container === 'mov' ? 'Salva il video MOV' : 'Salva il video MP4',
+      title: `Salva il video ${container.toUpperCase()}`,
       defaultPath: path.join(app.getPath('videos'), `${name}.${container}`),
-      filters: [{ name: container === 'mov' ? 'Video MOV' : 'Video MP4', extensions: [container] }],
+      filters: [{ name: `Video ${container.toUpperCase()}`, extensions: [container] }],
     });
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
     dest = r.filePath.toLowerCase().endsWith(`.${container}`) ? r.filePath : `${r.filePath}.${container}`;
@@ -152,10 +163,13 @@ ipcMain.handle('ciak:convert-mp4', async (event, input, options = {}) => {
       // altrimenti molti lettori mostrano colori slavati o contrasto sbagliato
       '-vf', 'scale=out_range=tv:out_color_matrix=bt709,format=yuv420p',
       '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
-      '-c:v', 'libx264', '-preset', 'fast', '-crf', String(crf), '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '192k',
-      '-movflags', '+faststart', // l'indice all'inizio: il video parte subito anche online
-      '-f', container, tmpOut,
+      '-c:v', VIDEO_CODECS[codecId].enc, ...VIDEO_CODECS[codecId].args,
+      // qualità costante (CRF) oppure, se l'utente ha scelto un bitrate, velocità di dati fissa
+      ...(customBitrate ? ['-b:v', String(customBitrate), '-maxrate', String(Math.round(customBitrate * 1.5)), '-bufsize', String(customBitrate * 2)] : ['-crf', String(VIDEO_CODECS[codecId].crf(crf)), ...(codecId === 'vp9' ? ['-b:v', '0'] : codecId === 'av1' ? ['-b:v', '0'] : [])]),
+      '-pix_fmt', 'yuv420p',
+      ...(container === 'webm' ? ['-c:a', 'libopus', '-b:a', '160k'] : ['-c:a', 'aac', '-b:a', '192k']),
+      ...(container === 'mp4' || container === 'mov' ? ['-movflags', '+faststart'] : []), // l'indice all'inizio: il video parte subito anche online
+      '-f', container === 'mkv' ? 'matroska' : container, tmpOut,
     ];
     convertCancelled = false;
     const result = await new Promise((resolve) => {

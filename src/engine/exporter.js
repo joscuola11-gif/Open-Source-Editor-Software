@@ -11,6 +11,7 @@ export const FORMATS = {
   auto: { label: 'Automatico (consigliato)', candidates: ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] },
   mp4: { label: 'MP4 (H.264/AAC) · dove supportato', candidates: ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4'] },
   webm: { label: 'WebM (VP9/Opus)', candidates: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] },
+  av1: { label: 'WebM (AV1/Opus) · file più piccoli', candidates: ['video/webm;codecs=av01.0.08M.08,opus', 'video/webm;codecs=av01,opus'] },
 };
 
 export const QUALITY = {
@@ -74,7 +75,7 @@ export class Exporter {
   /**
    * @returns {Promise<{blob: Blob, mime: string, ext: string, frames: number, expectedFrames: number, hiddenDuringExport: boolean, seconds: number}>}
    */
-  async run({ shortSide = 1080, format = 'auto', quality = 'medium', onProgress = () => {} } = {}) {
+  async run({ shortSide = 1080, format = 'auto', quality = 'medium', bitrate = null, onProgress = () => {} } = {}) {
     if (this.#running) throw new Error('Esportazione già in corso');
     const mime = pickMime(format);
     if (!mime) throw new Error('Questo browser non supporta la registrazione video (MediaRecorder).');
@@ -118,7 +119,7 @@ export class Exporter {
       const chunks = [];
       recorder = new MediaRecorder(stream, {
         mimeType: mime,
-        videoBitsPerSecond: estimateBitrate(width, height, fps, quality),
+        videoBitsPerSecond: Number.isFinite(bitrate) && bitrate > 0 ? Math.round(bitrate) : estimateBitrate(width, height, fps, quality),
         audioBitsPerSecond: 192_000,
       });
       this.#recorder = recorder;

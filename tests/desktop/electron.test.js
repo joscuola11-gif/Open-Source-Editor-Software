@@ -327,6 +327,86 @@ test('desktop: esporta solo audio in FLAC e M4A e il video in MOV tramite ffmpeg
   }
 });
 
+test('desktop: codec e contenitori a scelta (H.265, MKV, WebM VP9/AV1) e bitrate personalizzato', { skip }, async () => {
+  const outDir = tmp('ciak-cod-');
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg', CIAK_TEST_SAVE_DIR: outDir });
+  try {
+    await win.setInputFiles('#file-input', m.f('b.webm'));
+    await win.waitForSelector('.media-card');
+    const card = win.locator('.media-card').first();
+    await card.hover();
+    await card.locator('.add').click();
+    await win.waitForSelector('.clip');
+    const sizes = await win.evaluate(() => null);
+    void sizes;
+    const run = async (format, name, { bitrate } = {}) => {
+      await win.click('#btn-export');
+      await win.waitForFunction((f) => document.querySelector(`#exp-format option[value="${f}"]`), format, { timeout: 15000 });
+      await win.selectOption('#exp-format', format);
+      await win.selectOption('#exp-size', '480');
+      if (bitrate) {
+        await win.selectOption('#exp-quality', 'custom');
+        await win.fill('#exp-bitrate', String(bitrate));
+      }
+      await win.fill('#exp-name', name);
+      await win.click('button[data-act="start"]');
+      await win.waitForSelector('#exp-saved-path', { timeout: 180000 });
+      await win.click('button[data-act="close"]').catch(() => {});
+      await win.waitForSelector('dialog.dialog[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+    };
+    // la scelta di 4K esiste anche per un progetto Full HD
+    await win.click('#btn-export');
+    const opts = await win.evaluate(() => [...document.querySelectorAll('#exp-size option')].map((o) => o.textContent));
+    assert.ok(opts.some((t) => /4K/.test(t) && /2160/.test(t)), `si può scegliere il 4K (${opts.join(' | ')})`);
+    await win.click('button[data-act="Chiudi"], button[data-act="close"]').catch(() => {});
+    await win.waitForSelector('dialog.dialog[open]', { state: 'detached', timeout: 5000 }).catch(() => {});
+
+    await run('h265-ffmpeg', 'hevc');
+    let i = ffprobe(path.join(outDir, 'hevc.mp4'));
+    assert.equal(i.video.codec_name, 'hevc');
+    assert.equal(i.video.codec_tag_string, 'hvc1', 'compatibile con QuickTime e i telefoni');
+    assert.equal(i.audio.codec_name, 'aac');
+
+    await run('mkv-ffmpeg', 'matr');
+    i = ffprobe(path.join(outDir, 'matr.mkv'));
+    assert.equal(i.video.codec_name, 'h264');
+    assert.match(i.format, /matroska/);
+
+    await run('webm-ffmpeg', 'vp9');
+    i = ffprobe(path.join(outDir, 'vp9.webm'));
+    assert.equal(i.video.codec_name, 'vp9');
+    assert.equal(i.audio.codec_name, 'opus');
+
+    await run('av1-ffmpeg', 'av1');
+    i = ffprobe(path.join(outDir, 'av1.webm'));
+    assert.equal(i.video.codec_name, 'av1');
+
+    // bitrate personalizzato: su un filmato con molto movimento il file segue la velocità richiesta
+    await win.evaluate(() => window.__ciak.store.commit('prova', (p) => { for (const t of p.tracks) t.clips.length = 0; }));
+    await win.setInputFiles('#file-input', m.f('a.webm'));
+    await win.waitForFunction(() => document.querySelectorAll('.media-card').length >= 2);
+    const c2 = win.locator('.media-card').nth(1);
+    await c2.hover();
+    await c2.locator('.add').click();
+    await win.waitForSelector('.clip');
+    await run('mp4-ffmpeg', 'lento', { bitrate: 0.8 });
+    await run('mp4-ffmpeg', 'veloce', { bitrate: 6 });
+    const kb = (f) => { const x = ffprobe(path.join(outDir, f)); return (x.size * 8) / x.duration / 1000; };
+    const slow = kb('lento.mp4');
+    const fast = kb('veloce.mp4');
+    assert.ok(slow < 1800, `a 0,8 Mbit/s il file è leggero (${Math.round(slow)} kbit/s)`);
+    assert.ok(fast > slow * 2.5, `a 6 Mbit/s il file è molto più ricco (${Math.round(fast)} contro ${Math.round(slow)} kbit/s)`);
+    for (const f of readdirSync(outDir)) assert.ok(!f.endsWith('.part'), `file temporaneo rimasto: ${f}`);
+    for (const f of ['hevc.mp4', 'matr.mkv', 'vp9.webm', 'av1.webm', 'lento.mp4', 'veloce.mp4']) {
+      const dec = spawnSync('ffmpeg', ['-v', 'error', '-i', path.join(outDir, f), '-f', 'null', '-'], { encoding: 'utf8' });
+      assert.equal(dec.stderr.trim(), '', `${f}: decodifica senza errori ${dec.stderr}`);
+    }
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('desktop: «Voce da testo» trasforma un testo in un clip audio con la voce del sistema', { skip }, async () => {
   const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg' });
   try {

@@ -1341,30 +1341,37 @@ export class App {
     if (dur <= 0) return toast('La timeline è vuota: aggiungi almeno un clip prima di esportare', { type: 'warn' });
     if (typeof MediaRecorder === 'undefined') return toast('Questo browser non supporta l’esportazione video. Usa una versione recente di Chrome, Edge o Firefox.', { type: 'error' });
     player.pause();
-    const sizes = EXPORT_SIZES.filter((s) => s <= Math.max(720, Math.min(p.settings.width, p.settings.height) * 1.0001) || s === 480);
-    const sizeSel = h('select', { id: 'exp-size', 'aria-label': 'Risoluzione' }, sizes.map((s) => { const d = exportSize(p.settings, s); return h('option', { value: s }, `${s}p · ${d.width}×${d.height}`); }));
-    sizeSel.value = String(sizes.includes(1080) ? 1080 : sizes.at(-1));
+    // tutte le risoluzioni fino al 4K: sopra quella del progetto l'immagine viene ingrandita (testi e forme restano nitidi)
+    const sizes = EXPORT_SIZES;
+    const shortP = Math.min(p.settings.width, p.settings.height);
+    const sizeSel = h('select', { id: 'exp-size', 'aria-label': 'Risoluzione' }, sizes.map((s) => { const d = exportSize(p.settings, s); return h('option', { value: s }, `${s === 2160 ? '4K · ' : ''}${s}p · ${d.width}×${d.height}${s > shortP * 1.0001 ? ' (ingrandito)' : ''}`); }));
+    sizeSel.value = String(sizes.includes(1080) && shortP >= 1080 ? 1080 : sizes.filter((s) => s <= Math.max(720, shortP * 1.0001)).at(-1));
     const fmtSel = h('select', { id: 'exp-format', 'aria-label': 'Formato' }, availableFormats().map((f) => h('option', { value: f }, FORMATS[f].label)));
     // Programma desktop: ffmpeg incluso → MP4 vero (H.264/AAC). Il registratore produce WebM, poi viene convertito.
     const desktop = globalThis.ciakDesktop?.isDesktop ? globalThis.ciakDesktop : null;
     desktop?.mp4Available().then((ok) => {
       if (!ok) return;
       fmtSel.prepend(h('option', { value: 'mp4-ffmpeg' }, 'MP4 (H.264/AAC) · consigliato'));
-      fmtSel.children[0].after(h('option', { value: 'mov-ffmpeg' }, 'MOV (H.264/AAC) · per altri programmi di montaggio'));
+      fmtSel.children[0].after(h('option', { value: 'h265-ffmpeg' }, 'MP4 (H.265/AAC) · file più piccoli'), h('option', { value: 'mov-ffmpeg' }, 'MOV (H.264/AAC) · per altri programmi di montaggio'), h('option', { value: 'mkv-ffmpeg' }, 'MKV (H.264/AAC)'), h('option', { value: 'webm-ffmpeg' }, 'WebM (VP9/Opus) · web'), h('option', { value: 'av1-ffmpeg' }, 'WebM (AV1/Opus) · il più compatto, lento'));
       const audioGroup = fmtSel.querySelector('optgroup[label="Solo audio"]');
       audioGroup?.append(h('option', { value: 'flac-ffmpeg' }, 'Audio FLAC (senza perdite, compresso)'), h('option', { value: 'm4a-ffmpeg' }, 'Audio M4A (AAC 256 kbit/s)'));
       fmtSel.value = 'mp4-ffmpeg';
     }).catch(() => {});
-    const qSel = h('select', { id: 'exp-quality', 'aria-label': 'Qualità' }, Object.entries(QUALITY).map(([id, q]) => h('option', { value: id }, q.label)));
+    const qSel = h('select', { id: 'exp-quality', 'aria-label': 'Qualità' }, [...Object.entries(QUALITY).map(([id, q]) => h('option', { value: id }, q.label)), h('option', { value: 'custom' }, 'Personalizzata (bitrate in Mbit/s)…')]);
     qSel.value = 'high';
+    const bitrateIn = h('input', { type: 'number', class: 'text-input', id: 'exp-bitrate', min: '0.5', max: '200', step: '0.5', value: '15', 'aria-label': 'Bitrate in megabit al secondo' });
+    const bitrateRow = h('div', { class: 'ctl select', hidden: true }, h('label', { class: 'ctl-label' }, 'Bitrate (Mbit/s)'), bitrateIn);
+    const customBps = () => (qSel.value === 'custom' ? Math.max(0.5, Math.min(200, Number(bitrateIn.value) || 15)) * 1e6 : null);
+    qSel.addEventListener('change', () => { bitrateRow.hidden = qSel.value !== 'custom'; });
     const nameIn = h('input', { type: 'text', class: 'text-input', id: 'exp-name', value: p.name, 'aria-label': 'Nome del file', maxlength: 100 });
     const est = h('p', { class: 'hint', id: 'exp-estimate' });
     const updateEst = () => {
       const d = exportSize(p.settings, +sizeSel.value);
-      const bytes = (estimateBitrate(d.width, d.height, p.settings.fps, qSel.value) * dur) / 8 + (192_000 * dur) / 8;
+      const bytes = ((customBps() ?? estimateBitrate(d.width, d.height, p.settings.fps, qSel.value)) * dur) / 8 + (192_000 * dur) / 8;
       est.textContent = `Durata ${formatDuration(dur, 1)} · ${p.settings.fps} fps · circa ${formatBytes(bytes)} · tempo necessario ≈ ${formatDuration(dur + 2)} (l’esportazione avviene in tempo reale: tieni aperta questa scheda).`;
     };
     for (const s of [sizeSel, qSel]) s.addEventListener('change', updateEst);
+    bitrateIn.addEventListener('input', updateEst);
     updateEst();
     const progress = h('progress', { max: 1, value: 0, class: 'exp-progress', hidden: true, 'aria-label': 'Avanzamento esportazione' });
     const status = h('p', { class: 'exp-status', role: 'status', 'aria-live': 'polite' });
@@ -1372,7 +1379,7 @@ export class App {
     const row = (l, c) => h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, l), c);
     const sizeRow = row('Risoluzione', sizeSel);
     const qualRow = row('Qualità', qSel);
-    const form = h('div', { class: 'exp-form' }, row('Nome file', nameIn), sizeRow, row('Formato', fmtSel), qualRow, est);
+    const form = h('div', { class: 'exp-form' }, row('Nome file', nameIn), sizeRow, row('Formato', fmtSel), qualRow, bitrateRow, est);
     // altri formati: solo audio (WAV/MP3) e GIF animata, anche senza il programma desktop
     fmtSel.append(h('optgroup', { label: 'Solo audio' }, h('option', { value: 'wav' }, 'Audio WAV (senza perdite)'), h('option', { value: 'mp3' }, 'Audio MP3 (192 kbit/s)')), h('optgroup', { label: 'Immagine animata' }, h('option', { value: 'gif' }, 'GIF animata (lato corto fino a 480 px, 12 fps)')));
     const OTHER = ['wav', 'mp3', 'gif', 'flac-ffmpeg', 'm4a-ffmpeg'];
@@ -1398,6 +1405,7 @@ export class App {
     const baseName = () => (nameIn.value.trim() || 'video').replace(/[\\/:*?"<>|]+/g, '_');
     /** Converte il WebM registrato in MP4 con ffmpeg e lo fa salvare dall'utente. */
     let container = 'mp4';
+    let codec = 'h264';
     const convertToMp4 = async (res) => {
       status.textContent = `Fase 2/2 · conversione in ${container.toUpperCase()}…`;
       progress.hidden = false;
@@ -1408,7 +1416,7 @@ export class App {
         status.textContent = `Fase 2/2 · conversione in ${container.toUpperCase()}… ${Math.round(v * 100)}%`;
       });
       try {
-        return await desktop.convertToMp4(await res.blob.arrayBuffer(), { name: baseName(), duration: dur, fps: p.settings.fps, quality: qSel.value, container });
+        return await desktop.convertToMp4(await res.blob.arrayBuffer(), { name: baseName(), duration: dur, fps: p.settings.fps, quality: qSel.value, container, codec, bitrate: customBps() });
       } finally {
         off();
       }
@@ -1531,15 +1539,16 @@ export class App {
       progress.hidden = false;
       progress.value = 0;
       result.hidden = true;
-      const mp4 = (fmtSel.value === 'mp4-ffmpeg' || fmtSel.value === 'mov-ffmpeg') && !!desktop;
-      container = fmtSel.value === 'mov-ffmpeg' ? 'mov' : 'mp4';
+      const FF = { 'mp4-ffmpeg': ['mp4', 'h264'], 'h265-ffmpeg': ['mp4', 'h265'], 'mov-ffmpeg': ['mov', 'h264'], 'mkv-ffmpeg': ['mkv', 'h264'], 'webm-ffmpeg': ['webm', 'vp9'], 'av1-ffmpeg': ['webm', 'av1'] };
+      const mp4 = !!desktop && fmtSel.value in FF;
+      [container, codec] = FF[fmtSel.value] ?? ['mp4', 'h264'];
       status.textContent = mp4 ? 'Fase 1/2 · registrazione… non nascondere la finestra.' : 'Esportazione in corso… non cambiare scheda.';
       ctl.setActions([{ label: 'Annulla', danger: true, id: 'cancel', onClick: () => { exporter.cancel(); return false; } }]);
       // se si converte, la registrazione intermedia usa una qualità più alta per non degradare due volte
-      const interQuality = mp4 ? { low: 'medium', medium: 'high', high: 'ultra', ultra: 'ultra' }[qSel.value] : qSel.value;
+      const interQuality = mp4 ? { low: 'medium', medium: 'high', high: 'ultra', ultra: 'ultra', custom: 'ultra' }[qSel.value] : qSel.value;
       try {
         const res = await exporter.run({
-          shortSide: +sizeSel.value, format: mp4 ? 'webm' : fmtSel.value, quality: interQuality,
+          shortSide: +sizeSel.value, format: mp4 ? 'webm' : fmtSel.value, quality: interQuality === 'custom' ? 'ultra' : interQuality, bitrate: mp4 ? null : customBps(),
           onProgress: (v) => { progress.value = mp4 ? v * 0.7 : v; status.textContent = `${mp4 ? 'Fase 1/2 · registrazione' : 'Esportazione'}… ${Math.round(v * 100)}%`; },
         });
         if (mp4) {
