@@ -2472,3 +2472,47 @@ input[type='range'] {
 .exp-status.error {
   color: var(--danger, #ff6b6b);
 }
+
+/* ---- suoni ---- */
+.snd-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.snd-opts .inline-pair input[type='range'] {
+  width: 90px;
+}
+.lib-h2 {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.snd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+.snd-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.snd-name {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snd-btns {
+  display: flex;
+  gap: 2px;
+}

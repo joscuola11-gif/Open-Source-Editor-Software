@@ -1320,15 +1320,18 @@ export class App {
       },
       /** Inserisce un audio WAV già pronto come clip alla testina (nuovo file nel progetto). */
       addSpeechClip(wavBytes, label) {
+        return this.addGeneratedAudio(wavBytes, { name: `Voce · ${label.replace(/\s+/g, ' ').slice(0, 32) || 'testo'}`, label: 'Voce da testo', message: 'Voce aggiunta alla timeline.' });
+      },
+      /** Mette sulla timeline (alla testina) un audio generato dal programma: voce, effetto sonoro o musica. */
+      addGeneratedAudio(wavBytes, { name = 'Audio', label = 'Aggiungi audio', message = null } = {}) {
         const { channels, sampleRate } = decodeWav(wavBytes);
         const dur = channels[0].length / sampleRate;
         const mid = uid('m');
-        const name = `Voce · ${label.replace(/\s+/g, ' ').slice(0, 32) || 'testo'}`;
         const file = new File([wavBytes], `${name}.wav`, { type: 'audio/wav' });
         app.pool.add(mid, file);
         app.storage.putMedia(mid, file).catch(() => {});
         const start = quantize(app.player.time, app.store.project.settings.fps);
-        const r = app.commit('Voce da testo', (d) => {
+        const r = app.commit(label, (d) => {
           d.media[mid] = { id: mid, name: file.name, kind: 'audio', mime: 'audio/wav', size: file.size, duration: dur, width: 0, height: 0, hasAudio: true };
           const clip = createClip('audio', { name, mediaId: mid, start, duration: dur });
           const track = trackWithRoom(d, 'audio', start, dur);
@@ -1338,7 +1341,7 @@ export class App {
         if (r.ok) {
           app.selection.set([r.result.id]);
           app.#enrich(mid, true);
-          toast('Voce aggiunta alla timeline.', { type: 'success' });
+          toast(message ?? `«${name}» aggiunto alla timeline.`, { type: 'success' });
         } else app.pool.removeMedia(mid);
         return r;
       },

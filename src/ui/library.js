@@ -12,6 +12,7 @@ import { applyFilterParams, filterCss } from '../engine/pixel-fx.js';
 import { ACCEPT } from '../engine/media-import.js';
 import { createClip } from '../core/project.js';
 import { buildTemplatesTab } from './templates-panel.js';
+import { buildSoundsTab, stopPreview } from './sounds-panel.js';
 
 const TABS = [
   { id: 'media', label: 'Media', icon: 'folder' },
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'filters', label: 'Filtri', icon: 'sliders' },
   { id: 'effects', label: 'Effetti', icon: 'sparkles' },
   { id: 'transitions', label: 'Transizioni', icon: 'transition' },
+  { id: 'sounds', label: 'Suoni', icon: 'music' },
   { id: 'subtitles', label: 'Sottotitoli', icon: 'captions' },
 ];
 
@@ -92,6 +94,7 @@ export class Library {
 
   show(id) {
     if (!TABS.some((t) => t.id === id)) id = 'media';
+    stopPreview();
     this.#tab = id;
     prefs.set('libTab', id);
     for (const b of this.rail.children) {
@@ -103,7 +106,7 @@ export class Library {
     clear(this.body);
     this.#mediaSig = '';
     this.#filterThumbs = [];
-    const build = { media: () => this.#mediaTab(), templates: () => buildTemplatesTab(this.app), text: () => this.#textTab(), elements: () => this.#elementsTab(), filters: () => this.#filtersTab(), effects: () => this.#effectsTab(), transitions: () => this.#transitionsTab(), subtitles: () => this.#subtitlesTab() }[id];
+    const build = { media: () => this.#mediaTab(), templates: () => buildTemplatesTab(this.app), text: () => this.#textTab(), elements: () => this.#elementsTab(), filters: () => this.#filtersTab(), effects: () => this.#effectsTab(), transitions: () => this.#transitionsTab(), sounds: () => buildSoundsTab(this.app), subtitles: () => this.#subtitlesTab() }[id];
     this.body.append(build());
     this.#onSelection();
     if (id === 'filters') this.#paintFilterThumbs();
