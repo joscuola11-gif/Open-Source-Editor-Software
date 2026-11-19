@@ -12,6 +12,8 @@ import { ANIMATIONS, ENTER_EXIT_IDS, LOOPS, LOOP_IDS, transitionGroups } from '.
 import { EASING_LABELS, KEYFRAME_PROPS, removeKeyframeAt, setValueAt, valueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
 import { LAYOUTS } from '../core/layouts.js';
+import { CAMERA_MOVES } from '../core/camera.js';
+import { speedCurveEditor } from './speed-curve.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
 import { KARAOKE_MODES } from '../core/karaoke.js';
 import { SILENCE_DEFAULTS, findSilences, timelineRanges } from '../core/silence.js';
@@ -521,7 +523,13 @@ export class Inspector {
       info.textContent = `Durata sulla timeline: ${formatDuration(c.duration, 2)} · sorgente utilizzata: ${formatDuration(src, 2)}. Il resto della traccia si sposta di conseguenza.`;
       for (const b of chips.children) b.classList.toggle('on', Math.abs(+b.dataset.speed - c.speed) < 1e-3);
     } });
-    return [section('Velocità costante', [speed, chips, info])];
+    const out = [section('Velocità costante', [speed, chips, info])];
+    if (clip.kind === 'video') {
+      out.push(section('Curva di velocità (accelerazioni e rallentamenti)', [
+        speedCurveEditor({ span: clip.duration * clip.speed, duration: clip.duration, fps: store.project.settings.fps, onApply: (points, keepAudio) => this.app.actions.applySpeedRamp(points, { keepAudio }) }),
+      ], { open: false }));
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -538,6 +546,20 @@ export class Inspector {
       ]);
     };
     out.push(animGroup('in', 'Ingresso'), animGroup('out', 'Uscita'));
+    if (clip.kind === 'video' || clip.kind === 'image') {
+      const sel = h('select', { id: 'sel-camera', 'aria-label': 'Movimento di camera' }, CAMERA_MOVES.map((mv) => h('option', { value: mv.id }, mv.label)));
+      const amount = h('input', { type: 'range', id: 'rng-camera', min: 0, max: 100, step: 1, value: prefs.get('cameraAmount', 50), 'aria-label': 'Intensità del movimento' });
+      const out2 = h('output', { class: 'num-wrap' }, `${amount.value}%`);
+      amount.addEventListener('input', () => { out2.textContent = `${amount.value}%`; prefs.set('cameraAmount', +amount.value); });
+      out.push(section('Movimento di camera', [
+        h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Movimento'), sel),
+        h('div', { class: 'ctl slider' }, h('label', { class: 'ctl-label' }, 'Intensità'), amount, out2),
+        h('div', { class: 'btn-row wrap' },
+          h('button', { class: 'btn small primary', type: 'button', id: 'btn-camera-apply', onClick: () => this.app.actions.applyCameraMove(sel.value, +amount.value) }, icon('video', 14), 'Applica'),
+          h('button', { class: 'btn small', type: 'button', id: 'btn-camera-clear', onClick: () => this.app.actions.clearCameraMove() }, 'Togli')),
+        h('p', { class: 'hint' }, 'Crea da solo i keyframe di scala e posizione per tutta la durata del clip: puoi poi ritoccarli a mano nella lista «Keyframe» qui sotto.'),
+      ], { open: ['scale', 'x', 'y', 'rotation'].some((k) => clip.keyframes?.[k]?.length) }));
+    }
     out.push(section('Ciclica (per tutto il clip)', [
       this.#add(selectControl(this.ctx, { label: 'Tipo', options: [{ id: 'none', label: 'Nessuna' }, ...LOOP_IDS.map((id) => ({ id, label: LOOPS[id].label }))], get: (c) => c.anim.loop?.type ?? 'none', set: (c, v) => { c.anim.loop = v === 'none' ? null : { type: v, speed: c.anim.loop?.speed ?? 1, amount: c.anim.loop?.amount ?? 60 }; }, history: 'Animazione ciclica' })),
       this.S({ label: 'Velocità', min: 0.1, max: 8, step: 0.1, unit: '/s', decimals: 1, get: (c) => c.anim.loop?.speed ?? 1, set: (c, v) => { if (c.anim.loop) c.anim.loop.speed = v; }, def: 1, history: 'Animazione ciclica' }),

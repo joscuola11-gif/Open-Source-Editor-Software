@@ -1069,3 +1069,128 @@ test('schermo diviso: con un solo clip selezionato spiega cosa serve e non cambi
     assert.equal(JSON.stringify(await clips(page)), before);
   });
 });
+
+// ---------------------------------------------------------------- movimenti di camera
+test('movimento di camera: «Zoom avanti lento» ingrandisce davvero l’immagine nel tempo e si toglie con un clic', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('green.webm')]); // sfondo verde con quadrato rosso al centro
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await inspectorTab(page, 'Animazione');
+    await page.locator('details.section summary', { hasText: 'Movimento di camera' }).click();
+    await page.selectOption('#sel-camera', 'zoom-in');
+    await page.fill('#rng-camera', '100');
+    await page.click('#btn-camera-apply');
+    await page.waitForSelector('#btn-camera-clear:visible'); // con i keyframe la sezione resta aperta
+    const kfs = await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].keyframes);
+    assert.ok(kfs.scale.length === 2 && kfs.scale[1].v > 1.3, JSON.stringify(kfs.scale));
+    const dur = (await clips(page))[0].duration;
+    await seek(page, 0.05);
+    const startPx = await pixel(page, 0.31, 0.5); // fuori dal quadrato: verde
+    assert.ok(startPx[1] > 200 && startPx[0] < 60, `all'inizio è verde (${startPx})`);
+    await seek(page, dur - 0.05);
+    const endPx = await pixel(page, 0.31, 0.5); // dopo lo zoom il quadrato rosso arriva fin qui
+    assert.ok(endPx[0] > 200 && endPx[1] < 60, `alla fine è rosso (${endPx})`);
+    await page.click('#btn-camera-clear');
+    assert.equal(await page.evaluate(() => Object.keys(window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].keyframes).length), 0);
+    await seek(page, dur - 0.05);
+    assert.ok((await pixel(page, 0.31, 0.5))[1] > 200, 'tolto: torna verde');
+    // annulla: torna lo zoom
+    await page.click('#btn-undo');
+    assert.ok((await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].keyframes.scale?.length)) === 2);
+  });
+});
+
+test('movimento di camera: «Mano libera» muove l’immagine in modo diverso a ogni istante', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('green.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await page.evaluate(() => window.__ciak.actions.applyCameraMove('handheld', 100));
+    const xs = [];
+    for (const t of [0.3, 0.7, 1.1, 1.5, 1.9]) {
+      await seek(page, t);
+      xs.push(await page.evaluate((t) => window.__ciak.store.project.tracks.flatMap((c) => c.clips)[0].keyframes.x.reduce((best, k) => (Math.abs(k.t - t) < Math.abs(best.t - t) ? k : best)).v, t));
+    }
+    assert.ok(new Set(xs.map((v) => v.toFixed(4))).size >= 3, `valori diversi: ${xs}`);
+  });
+});
+
+// ---------------------------------------------------------------- curva di velocità
+test('curva di velocità: «Eroe» divide il clip in pezzi, la sorgente resta continua e il video segue la velocità giusta', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('a.webm')]); // 4 s
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await inspectorTab(page, 'Velocità');
+    await page.locator('details.section summary', { hasText: 'Curva di velocità' }).click();
+    assert.ok((await page.locator('.speed-pt').count()) >= 2, 'ci sono i punti');
+    const total = (await clips(page))[0].duration;
+    await page.click('[data-ramp="hero"]');
+    assert.ok((await page.locator('.speed-pt').count()) === 6, 'preset Eroe: 6 punti');
+    assert.match(await page.textContent('#speed-curve-info'), /Ora il clip dura 0:04/);
+    await page.click('#btn-ramp-apply');
+    await page.waitForFunction(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).length > 4);
+    const cs = (await clips(page)).sort((a, b) => a.start - b.start);
+    assert.ok(cs.length >= 8);
+    let src = 0;
+    for (const c of cs) {
+      near(c.in, src, 1e-6, 'sorgente continua');
+      src += c.duration * c.speed;
+      assert.equal(c.muted, true);
+    }
+    near(src, total, 1e-6, 'tutto il video è usato');
+    for (let i = 1; i < cs.length; i++) near(cs[i].start, cs[i - 1].start + cs[i - 1].duration, 1e-6, 'pezzi attaccati');
+    assert.ok(cs.some((c) => c.speed < 0.5) && cs.some((c) => c.speed > 1.5), 'rallentamenti e accelerazioni');
+    // il video mostrato a un certo istante è quello della sorgente giusta
+    for (const k of [1, Math.floor(cs.length / 2), cs.length - 2]) {
+      const c = cs[k];
+      const t = c.start + c.duration * 0.5;
+      await seek(page, t);
+      const cur = await page.evaluate((id) => window.__ciak.pool.peek(id)?.currentTime ?? -1, c.id);
+      near(cur, c.in + (t - c.start) * c.speed, 0.12, `pezzo ${k}: posizione del video`);
+    }
+    // si annulla con un passo
+    await page.click('#btn-undo');
+    assert.equal((await clips(page)).length, 1);
+    near((await clips(page))[0].duration, total, 1e-6);
+  });
+});
+
+test('curva di velocità: i punti si trascinano, si aggiungono con doppio clic e si tolgono; la durata prevista cambia', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('a.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await inspectorTab(page, 'Velocità');
+    await page.locator('details.section summary', { hasText: 'Curva di velocità' }).click();
+    await page.click('[data-ramp="flash-in"]'); // due punti: 0,25× → 3×
+    const before = await page.textContent('#speed-curve-info');
+    await page.locator('.speed-svg').scrollIntoViewIfNeeded();
+    const box = await page.locator('.speed-svg').boundingBox();
+    const toXY = (t, s) => [box.x + ((30 + t * 262) / 300) * box.width, box.y + ((8 + (1 - (Math.log(s) - Math.log(0.1)) / (Math.log(8) - Math.log(0.1))) * 124) / 150) * box.height];
+    // doppio clic al centro: nuovo punto
+    const [cx, cy] = toXY(0.5, 1);
+    await page.mouse.dblclick(cx, cy);
+    assert.equal(await page.locator('.speed-pt').count(), 3);
+    // trascina il punto centrale in alto: più veloce → clip più corto
+    const [px, py] = toXY(0.5, 1);
+    const [, ty] = toXY(0.5, 6);
+    await page.mouse.move(px, py);
+    await page.mouse.down();
+    await page.mouse.move(px, ty, { steps: 6 });
+    await page.mouse.up();
+    const pts = await page.evaluate(() => document.querySelector('#speed-curve').getPoints());
+    assert.ok(pts[1].s > 4, `punto trascinato: ${pts[1].s}`);
+    assert.notEqual(await page.textContent('#speed-curve-info'), before, 'la durata prevista cambia');
+    // tastiera: freccia in giù riduce la velocità; Canc toglie il punto
+    await page.locator('.speed-pt[data-pt="1"]').focus();
+    await page.keyboard.press('ArrowDown');
+    const pts2 = await page.evaluate(() => document.querySelector('#speed-curve').getPoints());
+    assert.ok(pts2[1].s < pts[1].s);
+    await page.keyboard.press('Delete');
+    assert.equal(await page.locator('.speed-pt').count(), 2);
+    // nessuna modifica al progetto finché non si preme «Applica»
+    assert.equal((await clips(page)).length, 1);
+  });
+});

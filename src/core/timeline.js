@@ -25,11 +25,13 @@ import {
   trackTypeFor,
 } from './project.js';
 import { MAX_SPEED, MIN_SPEED } from './presets.js';
-import { scaleKeyframeTimes, shiftKeyframeTimes, splitKeyframes } from './keyframes.js';
+import { rampSegments, rampDuration, warpTime } from './speedramp.js';
+import { scaleKeyframeTimes, shiftKeyframeTimes, splitKeyframes, valueAt } from './keyframes.js';
 
 export { allClips, findClip, getTrack, projectDuration };
 
 export const minDur = (p) => 1 / p.settings.fps;
+const clone = (x) => JSON.parse(JSON.stringify(x));
 export const clipEnd = (c) => c.start + c.duration;
 const byStart = (a, b) => a.start - b.start;
 export const sortTrack = (track) => track.clips.sort(byStart);
@@ -622,6 +624,79 @@ export function setSpeed(p, id, speed) {
   clampClipDurations(p, track, clip);
   assertTrackValid(track);
   return newSpeed;
+}
+
+/**
+ * Applica una curva di velocità: il clip video diventa una fila di pezzi a velocità costante (la sorgente è continua
+ * da un pezzo all'altro). I clip che seguono sulla stessa traccia scorrono della differenza di durata.
+ * I keyframe del clip vengono ricollocati sullo stesso punto del video. Per default l'audio dei pezzi è muto.
+ * @returns {string[]} gli id dei nuovi clip
+ */
+export function applySpeedRamp(p, clipId, points, { keepAudio = false } = {}) {
+  const { track, clip, index } = requireClip(p, clipId);
+  requireUnlocked(track);
+  if (clip.kind !== 'video') throw new EditError('La curva di velocità si applica ai video');
+  const span = clip.duration * clip.speed;
+  let segs;
+  try {
+    segs = rampSegments(points, span, { fps: p.settings.fps });
+  } catch (e) {
+    throw new EditError(e.message);
+  }
+  const total = rampDuration(segs);
+  const delta = total - clip.duration;
+  const orig = clone(clip);
+  const made = [];
+  let acc = 0;
+  let srcAcc = 0;
+  segs.forEach((g, i) => {
+    const c = clone(orig);
+    c.id = i === 0 ? orig.id : uid('c');
+    c.start = orig.start + acc;
+    c.duration = g.dur;
+    c.in = orig.in + srcAcc;
+    c.speed = g.speed;
+    if (!keepAudio) c.muted = true;
+    if (i > 0) {
+      c.transition = null;
+      c.fadeIn = 0;
+      c.anim.in = null;
+    } else c.fadeIn = Math.min(orig.fadeIn, g.dur);
+    if (i < segs.length - 1) {
+      c.fadeOut = 0;
+      c.anim.out = null;
+    } else c.fadeOut = Math.min(orig.fadeOut, g.dur);
+    if (c.transition) c.transition.duration = Math.min(c.transition.duration, g.dur);
+    c.keyframes = {};
+    for (const [prop, kfs] of Object.entries(orig.keyframes ?? {})) {
+      // il tempo originale τ corrisponde alla posizione di sorgente τ / durata; da lì al nuovo tempo di uscita.
+      // Ai confini dei pezzi si aggiungono punti col valore originale: dentro un pezzo la velocità è costante,
+      // quindi l'interpolazione lineare nel tempo di uscita è quella giusta anche nel video.
+      const warped = kfs.map((k) => ({ ...k, t: warpTime(segs, k.t / orig.duration) }));
+      let bt = 0;
+      for (const gg of segs) {
+        bt += gg.dur;
+        if (!warped.some((k) => Math.abs(k.t - bt) < 1e-6)) warped.push({ t: bt, v: valueAt(orig, prop, gg.u1 * orig.duration), e: 'linear' });
+      }
+      warped.sort((a, b) => a.t - b.t);
+      const tmp = { keyframes: { [prop]: warped }, transform: orig.transform, volume: orig.volume };
+      const t0 = acc;
+      const t1 = acc + g.dur;
+      const before = [...warped].reverse().find((k) => k.t <= t0 + 1e-9);
+      const list = [{ t: 0, v: valueAt(tmp, prop, t0), e: before?.e ?? 'linear' }];
+      for (const k of warped) if (k.t > t0 + 1e-6 && k.t < t1 - 1e-6) list.push({ t: k.t - t0, v: k.v, e: k.e });
+      list.push({ t: g.dur, v: valueAt(tmp, prop, t1), e: 'linear' });
+      c.keyframes[prop] = list;
+    }
+    made.push(c);
+    acc += g.dur;
+    srcAcc += g.src;
+  });
+  const after = track.clips.slice(index + 1);
+  track.clips = [...track.clips.slice(0, index), ...made, ...after];
+  for (const c of after) c.start += delta;
+  assertTrackValid(track);
+  return made.map((c) => c.id);
 }
 
 function shiftFrom(track, index, delta) {

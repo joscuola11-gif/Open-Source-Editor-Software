@@ -28,6 +28,8 @@ import { Teleprompter } from './teleprompter.js';
 import { openProjectsDialog } from './projects-dialog.js';
 import { saveCurrentAsTemplate } from './templates-panel.js';
 import { layoutClips } from '../core/layouts.js';
+import { applyCameraMove, clearCameraMove } from '../core/camera.js';
+import { applySpeedRamp } from '../core/timeline.js';
 import { applyTemplate, parseTemplateFile, serializeTemplate, templateFromProject } from '../core/templates.js';
 import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
@@ -999,6 +1001,28 @@ export class App {
         if (!ids.length) return toast('Seleziona prima i clip da disporre (Ctrl o Maiusc + clic per più clip)', { type: 'warn' });
         const r = app.commit('Disposizione', (d) => layoutClips(d, ids, layoutId, { fill }));
         if (r.ok) app.player.settle?.();
+      },
+      /** Curva di velocità sul clip video selezionato: lo divide in pezzi a velocità costante. */
+      applySpeedRamp(points, { keepAudio = false } = {}) {
+        const id = app.inspector.clipId ?? app.selection.primary;
+        const f = id && findClip(app.store.project, id);
+        if (!f || f.clip.kind !== 'video') return toast('Seleziona un clip video', { type: 'warn' });
+        const r = app.commit('Curva di velocità', (d) => { applySpeedRamp(d, id, points, { keepAudio }); });
+        if (r.ok) {
+          app.selection.set([id]);
+          toast('Curva di velocità applicata: il clip è diviso in pezzi a velocità diversa', { type: 'success' });
+        }
+      },
+      /** Movimento di camera simulato (zoom lento, panoramica, mano libera) sui clip video/foto selezionati. */
+      applyCameraMove(moveId, amount = 50) {
+        const ids = app.targets({ visual: true }).filter((id) => ['video', 'image'].includes(findClip(app.store.project, id).clip.kind));
+        if (!ids.length) return toast('Seleziona un video o una foto', { type: 'warn' });
+        app.commit('Movimento di camera', (d) => { ids.forEach((id, i) => applyCameraMove(findClip(d, id).clip, moveId, { amount, seed: 1 + i * 7919 })); });
+      },
+      clearCameraMove() {
+        const ids = app.targets({ visual: true });
+        if (!ids.length) return;
+        app.commit('Togli movimento di camera', (d) => { for (const id of ids) clearCameraMove(findClip(d, id).clip); });
       },
       /** Mette lo stesso tipo di sfondo dietro tutti i video e le foto del progetto. */
       setBackdropAll(mode) {

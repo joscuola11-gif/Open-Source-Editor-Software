@@ -6,9 +6,10 @@ import { Store } from '../../src/core/store.js';
 import {
   addMarker, addMediaClip, addTrack, copyClips, deleteClips, duplicateClips, insertFreezeFrame, moveClips, moveTrack,
   pasteClips, planMove, removeTrack, rippleDelete, setSpeed, setTransition, splitClip, trimClip, trimToTime, cutRange, validateProject, allClips,
-  clipEnd,
+  clipEnd, applySpeedRamp,
 } from '../../src/core/timeline.js';
 import { upsertKeyframe } from '../../src/core/keyframes.js';
+import { RAMP_PRESETS } from '../../src/core/speedramp.js';
 import { baseProject } from '../helpers/fixtures.js';
 import { EditError } from '../../src/core/util.js';
 
@@ -103,6 +104,12 @@ function runFuzz(seed, steps) {
       const c = randomClip();
       if (!c) return { ok: true, skipped: true };
       return store.commit('transition', (p) => setTransition(p, c.id, r() < 0.25 ? null : { type: 'fade', duration: pick([0.1, 0.5, 1, 2, 5]) }));
+    },
+    ramp: () => {
+      const c = clipsOf().find((x) => x.kind === 'video');
+      if (!c) return { ok: true, skipped: true };
+      const pts = r() < 0.5 ? pick(RAMP_PRESETS).points : Array.from({ length: 2 + Math.floor(r() * 4) }, () => ({ t: r(), s: 0.1 + r() * 7.9 }));
+      return store.commit('ramp', (p) => applySpeedRamp(p, c.id, pts, { keepAudio: r() < 0.5 }));
     },
     dup: () => store.commit('dup', (p) => duplicateClips(p, randomSel())),
     copy: () => {
