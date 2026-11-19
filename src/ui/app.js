@@ -517,6 +517,7 @@ export class App {
         const t = app.player.time;
         const clip = createClip('text', { name: pr?.label ?? 'Testo', start: t, duration: DEFAULT_TEXT_DURATION, text: pr ? structuredClone(pr.text) : {}, transform: { y: pr?.y ?? 0 } });
         if (pr?.animIn) clip.anim.in = { type: pr.animIn, duration: 1 };
+        if (pr?.loop) clip.anim.loop = { ...pr.loop };
         const r = app.#place(clip, 'Aggiungi testo');
         if (r.ok) setTimeout(() => app.inspector.focusText(), 50);
       },

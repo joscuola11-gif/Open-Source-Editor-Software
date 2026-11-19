@@ -11,6 +11,7 @@ import { clamp, isNum, mergeDeep, uid } from './util.js';
 import { MAX_SPEED, MIN_SPEED } from './presets.js';
 import { defaultGrade, sanitizeGrade, sanitizeLuts } from './grade.js';
 import { defaultKaraoke, sanitizeKaraoke, sanitizeWords } from './karaoke.js';
+import { sanitizeLoop } from './animations.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -99,7 +100,7 @@ export function createClip(kind, props = {}) {
     chroma: { enabled: false, color: '#00ff00', similarity: 0.4, smoothness: 0.1 },
     keyframes: {},
     transition: null,
-    anim: { in: null, out: null },
+    anim: { in: null, out: null, loop: null },
   };
   if (kind === 'text') base.text = defaultText();
   if (kind === 'shape') base.shape = defaultShape();
@@ -186,6 +187,7 @@ export function sanitizeClip(raw, p) {
       if (clip.anim[side].duration <= 0) clip.anim[side] = null;
     }
   }
+  clip.anim.loop = sanitizeLoop(clip.anim.loop);
   for (const [prop, kfs] of Object.entries(clip.keyframes ?? {})) {
     const clean = (Array.isArray(kfs) ? kfs : []).filter((k) => k && isNum(k.t) && isNum(k.v)).map((k) => ({ t: k.t, v: k.v, e: typeof k.e === 'string' ? k.e : 'linear' }));
     clean.sort((a, b) => a.t - b.t);

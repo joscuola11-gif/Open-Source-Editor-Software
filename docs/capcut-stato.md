@@ -12,10 +12,18 @@ Riferimento: `docs/capcut-catalogo-funzioni.txt` (numeri delle voci). Aggiornato
 | 164 | Ruote colore (ombre, toni medi, luci: tinta e intensità) | idem |
 | 165-166 | Importazione LUT 3D `.cube` (anche 65 punti, ridotte a 33) con intensità | `core/grade.js` `parseCube`, azione `importLut` |
 | 170 | Stessa correzione anche sui livelli di regolazione (uniformare più clip) | `adjustment` usa lo stesso passaggio |
+| 202-203 | Karaoke: colore di evidenza parola per parola (tempi del file o automatici, due modi) | `core/karaoke.js`, `engine/renderer.js` |
+| 209-211 | Sottotitoli: importazione SRT, WebVTT, ASS/SSA (anche karaoke `\k`), LRC (anche esteso), TXT; esportazione SRT, VTT, TXT, LRC | `core/subtitles.js` |
+| 197 | Sposta tutti i sottotitoli di ±N secondi (sincronizzazione) | azione `shiftSubtitles` |
+| 206 | Modifica del video dalla trascrizione: «Taglia» toglie la frase da tutte le tracce e chiude il buco | `core/timeline.js` `cutRange` · fuzz esteso |
+| 207, 253 | Rimozione di pause e silenzi dall'inviluppo audio, con anteprima del conteggio | `core/silence.js` |
+| 183 | Modelli di testo pronti: da 8 a 23 (terzo inferiore, cinema, fumetto, citazione, pillola, neon, fuoco…) | `core/presets.js` |
+| 187, 84 | Animazioni cicliche per tutto il clip (pulsa, battito, fluttua, dondola, ondeggia, trema, lampeggia, respira, gira) | `core/animations.js` |
 
 ## Già presenti prima (verificate nel codice)
 Ribalta orizzontale e verticale (64-65), ritaglio con cursori (61), colore dello sfondo del canvas, estrai audio (218-219),
-fotogramma fisso (50/103), velocità costante (92-94), transizioni, keyframe, maschere, chroma key, filtri, effetti, testo, sottotitoli SRT.
+fotogramma fisso (50/103), velocità costante (92-94), transizioni, keyframe, maschere, chroma key, filtri, effetti, testo
+con contorno/ombra/sfondo/allineamento/spaziatura (171-182), animazioni di ingresso e uscita del testo (185-186).
 
 ## Non fattibile (servizi esterni, account, licenze, app mobili)
 Vedi il README, sezione «Catalogo CapCut».

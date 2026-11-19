@@ -128,6 +128,35 @@ export const ANIMATIONS = {
   ),
 };
 
+// ---- animazioni cicliche: durano per tutto il clip e si ripetono (`speed` = cicli al secondo, `amount` = intensità 0..100) ----
+const TAU = Math.PI * 2;
+export const LOOPS = {
+  pulse: { label: 'Pulsa', fn: (ph, a, s) => { s.scale = 1 + 0.07 * a * Math.sin(ph * TAU); } },
+  heartbeat: { label: 'Battito', fn: (ph, a, s) => { const x = ph % 1; s.scale = 1 + 0.1 * a * (Math.exp(-((x - 0.1) ** 2) / 0.003) + 0.7 * Math.exp(-((x - 0.3) ** 2) / 0.004)); } },
+  float: { label: 'Fluttua', fn: (ph, a, s) => { s.dy = -0.025 * a * Math.sin(ph * TAU); } },
+  swing: { label: 'Dondola', fn: (ph, a, s) => { s.rotation = 6 * a * Math.sin(ph * TAU); } },
+  wiggle: { label: 'Ondeggia', fn: (ph, a, s) => { s.dx = 0.02 * a * Math.sin(ph * TAU); s.rotation = 3 * a * Math.sin(ph * TAU * 2); } },
+  shake: { label: 'Trema', fn: (ph, a, s) => { s.dx = 0.008 * a * Math.sin(ph * TAU * 7); s.dy = 0.008 * a * Math.cos(ph * TAU * 9); } },
+  blink: { label: 'Lampeggia', fn: (ph, a, s) => { s.alpha = 1 - 0.85 * a * (Math.sin(ph * TAU) > 0 ? 0 : 1); } },
+  breathe: { label: 'Respira', fn: (ph, a, s) => { s.alpha = 1 - 0.45 * a * (0.5 - 0.5 * Math.cos(ph * TAU)); } },
+  'spin-loop': { label: 'Gira', fn: (ph, a, s) => { s.rotation = (ph % 1) * 360 * (a > 0 ? 1 : 0); } },
+};
+export const LOOP_IDS = Object.keys(LOOPS);
+
+export function sanitizeLoop(raw) {
+  if (!raw || typeof raw !== 'object' || !LOOPS[raw.type]) return null;
+  const num = (v, d, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+  return { type: raw.type, speed: num(raw.speed, 1, 0.1, 8), amount: num(raw.amount, 60, 0, 100) };
+}
+
+/** Stato di una animazione ciclica a `local` secondi dall'inizio del clip. */
+export function loopState(loop, local, out = neutralState()) {
+  const l = LOOPS[loop?.type];
+  if (!l || !(local >= 0)) return out;
+  l.fn(local * (loop.speed ?? 1), (loop.amount ?? 60) / 100, out);
+  return out;
+}
+
 export const ANIMATION_IDS = Object.keys(ANIMATIONS);
 export const TRANSITION_IDS = ANIMATION_IDS.filter((id) => !ANIMATIONS[id].textOnly);
 export const ENTER_EXIT_IDS = ANIMATION_IDS.filter((id) => !ANIMATIONS[id].transitionOnly);
@@ -153,6 +182,7 @@ export function clipAnimationState(clip, local) {
   if (ai && ai.duration > 0 && local < ai.duration) combine(s, animationState(ai.type, local / ai.duration));
   const ao = clip.anim?.out;
   if (ao && ao.duration > 0 && local > d - ao.duration) combine(s, animationState(ao.type, (d - local) / ao.duration));
+  if (clip.anim?.loop) combine(s, loopState(clip.anim.loop, local));
   return s;
 }
 

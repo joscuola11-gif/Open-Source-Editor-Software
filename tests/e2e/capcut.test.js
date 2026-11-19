@@ -399,3 +399,52 @@ test('pause: l\'analisi dell\'audio le trova, mostra quante sono e le toglie da 
     near((await clips(page))[0].duration, before, 0.01);
   });
 });
+
+test('modelli di testo e animazioni cicliche: i nuovi modelli compaiono, il ciclo muove davvero il testo e si regola', async () => {
+  await withApp(async ({ page }) => {
+    await openTab(page, 'text');
+    assert.ok((await page.locator('.text-card').count()) >= 20, 'molti modelli pronti');
+    await page.locator('.text-card[data-preset="pill"]').click();
+    await page.waitForSelector('.clip.kind-text');
+    let [c] = await clips(page);
+    assert.equal(c.anim.loop.type, 'pulse', 'il modello porta con sé il ciclo');
+    assert.equal(c.anim.in.type, 'pop');
+
+    // il ciclo «fluttua»: il testo cambia posizione fra un istante e l'altro
+    await page.evaluate(() => {
+      const id = window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].id;
+      window.__ciak.store.commit('prova', (p) => {
+        const q = p.tracks.flatMap((t) => t.clips).find((x) => x.id === id);
+        q.anim.in = null;
+        q.anim.loop = { type: 'float', speed: 0.5, amount: 100 };
+        q.text.bg.enabled = false;
+        q.text.content = 'OOOO';
+        q.text.size = 10;
+      });
+    });
+    const centerY = async (t) => {
+      await seek(page, t);
+      return page.evaluate(() => {
+        const cv = window.__ciak.preview.canvas;
+        const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+        let sum = 0, n = 0;
+        for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x += 2) if (d[(y * cv.width + x) * 4] > 200) { sum += y; n++; }
+        return n ? sum / n / cv.height : -1;
+      });
+    };
+    const y0 = await centerY(0.05);
+    const yUp = await centerY(0.5); // un quarto di ciclo (0,5 cicli/s): massimo spostamento
+    const yBack = await centerY(2.05); // un ciclo intero dopo: stessa posizione di partenza
+    assert.ok(y0 > 0 && yUp > 0);
+    assert.ok(Math.abs(y0 - yUp) > 0.015, `il testo si è mosso (${y0.toFixed(3)} → ${yUp.toFixed(3)})`);
+    near(yBack, y0, 0.004, 'dopo un ciclo è tornato dov\'era');
+
+    // dal pannello Animazione: sezione ciclica con tipo, velocità e intensità
+    await page.locator('.clip.kind-text').first().click();
+    await inspectorTab(page, 'Animazione');
+    assert.ok(await page.getByText('Ciclica (per tutto il clip)').isVisible());
+    assert.equal(await page.locator('details.section', { hasText: 'Ciclica' }).locator('select').inputValue(), 'float');
+    [c] = await clips(page);
+    assert.equal(c.anim.loop.speed, 0.5);
+  });
+});

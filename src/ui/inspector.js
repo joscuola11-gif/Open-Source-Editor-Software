@@ -8,7 +8,7 @@ import { actionButton, colorPicker, section, segmented, selectControl, slider, t
 import { clamp, formatBytes, formatDuration } from '../core/util.js';
 import { allClips, findClip, projectDuration, setSpeed, setTransition } from '../core/timeline.js';
 import { ASPECTS, BLEND_MODES, EFFECTS, FILTERS, FONTS, FPS_OPTIONS, MASKS, SHAPES, MAX_SPEED, MIN_SPEED, SPEED_PRESETS } from '../core/presets.js';
-import { ANIMATIONS, ENTER_EXIT_IDS, TRANSITION_IDS } from '../core/animations.js';
+import { ANIMATIONS, ENTER_EXIT_IDS, LOOPS, LOOP_IDS, TRANSITION_IDS } from '../core/animations.js';
 import { EASING_LABELS, KEYFRAME_PROPS, removeKeyframeAt, setValueAt, valueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
@@ -400,6 +400,12 @@ export class Inspector {
       ]);
     };
     out.push(animGroup('in', 'Ingresso'), animGroup('out', 'Uscita'));
+    out.push(section('Ciclica (per tutto il clip)', [
+      this.#add(selectControl(this.ctx, { label: 'Tipo', options: [{ id: 'none', label: 'Nessuna' }, ...LOOP_IDS.map((id) => ({ id, label: LOOPS[id].label }))], get: (c) => c.anim.loop?.type ?? 'none', set: (c, v) => { c.anim.loop = v === 'none' ? null : { type: v, speed: c.anim.loop?.speed ?? 1, amount: c.anim.loop?.amount ?? 60 }; }, history: 'Animazione ciclica' })),
+      this.S({ label: 'Velocità', min: 0.1, max: 8, step: 0.1, unit: '/s', decimals: 1, get: (c) => c.anim.loop?.speed ?? 1, set: (c, v) => { if (c.anim.loop) c.anim.loop.speed = v; }, def: 1, history: 'Animazione ciclica' }),
+      this.S({ label: 'Intensità', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.anim.loop?.amount ?? 60, set: (c, v) => { if (c.anim.loop) c.anim.loop.amount = v; }, def: 60, history: 'Animazione ciclica' }),
+      h('p', { class: 'hint' }, 'Si ripete per tutta la durata del clip, insieme alle animazioni di ingresso e di uscita.'),
+    ], { open: !!clip.anim.loop }));
     if (isVisualKind(clip.kind)) {
       const sel = h('select', { 'aria-label': 'Tipo di transizione', id: 'sel-transition' },
         [{ id: 'none', label: 'Nessuna' }, ...TRANSITION_IDS.map((id) => ({ id, label: ANIMATIONS[id].label }))].map((o) => h('option', { value: o.id }, o.label)));
