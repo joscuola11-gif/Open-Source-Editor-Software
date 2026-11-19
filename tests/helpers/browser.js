@@ -61,3 +61,31 @@ export async function seek(page, t) {
   await page.evaluate((t) => window.__ciak.player.seek(t), t);
   await page.evaluate(() => window.__ciak.player.settle());
 }
+
+export const openTab = async (page, id) => {
+  await page.click(`#tab-${id}`);
+};
+export const inspectorTab = async (page, label) => {
+  await page.locator('.insp-tabs .tab', { hasText: label }).click();
+};
+/** Imposta il valore numerico di uno slider dell'inspector (per etichetta) come farebbe l'utente. */
+export async function setNum(page, label, value) {
+  const num = page.locator('.ctl.slider', { has: page.locator('.ctl-label', { hasText: new RegExp(`^${label}$`) }) }).locator('input.num');
+  await num.fill(String(value));
+  await num.press('Enter');
+}
+export async function addMedia(page, n) {
+  const card = page.locator('.media-card').nth(n);
+  await card.hover();
+  await card.locator('.add').click();
+}
+export const selectClipByIndex = (page, i) => page.locator('.clip').nth(i).click();
+export const lum = ([r, g, b]) => 0.299 * r + 0.587 * g + 0.114 * b;
+
+/** Attende (con retry) che il testo di un elemento corrisponda a una regex. */
+export async function waitText(page, selector, regex, timeout = 5000) {
+  await page.waitForFunction(([sel, src, flags]) => {
+    const el = document.querySelector(sel);
+    return !!el && new RegExp(src, flags).test(el.textContent ?? '');
+  }, [selector, regex.source, regex.flags], { timeout });
+}

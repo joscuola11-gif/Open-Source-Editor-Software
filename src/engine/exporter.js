@@ -47,6 +47,7 @@ export class Exporter {
   #cancelled = false;
   #recorder = null;
   #running = false;
+  #wake = null;
 
   constructor({ store, player, audio }) {
     this.store = store;
@@ -59,6 +60,7 @@ export class Exporter {
 
   cancel() {
     this.#cancelled = true;
+    this.#wake?.(); // sblocca l'attesa della fine della riproduzione
     if (this.#recorder && this.#recorder.state !== 'inactive') {
       try {
         this.#recorder.stop();
@@ -138,13 +140,17 @@ export class Exporter {
         this.player.on('time', (t) => onProgress(Math.min(1, t / duration))),
       );
 
-      const ended = new Promise((resolve) => offTime.push(this.player.on('ended', resolve)));
+      // la riproduzione termina da sola ('ended') oppure l'utente annulla (cancel → wake)
+      const ended = new Promise((resolve) => {
+        offTime.push(this.player.on('ended', resolve));
+        this.#wake = resolve;
+      });
       const startedAt = performance.now();
       recorder.start(1000);
       await this.player.play();
       await ended;
       // coda: lascia che l'ultimo audio/video venga consegnato al registratore
-      await new Promise((r) => setTimeout(r, 350));
+      if (!this.#cancelled) await new Promise((r) => setTimeout(r, 350));
       if (recorder.state !== 'inactive') recorder.stop();
       await stopped;
       if (this.#cancelled) throw Object.assign(new Error('Esportazione annullata'), { cancelled: true });
@@ -181,6 +187,7 @@ export class Exporter {
         /* ignorato */
       }
       this.#recorder = null;
+      this.#wake = null;
       this.#running = false;
     }
   }

@@ -94,6 +94,7 @@ kbd {
 /* ---------- layout principale ---------- */
 .app {
   display: grid;
+  grid-template-columns: minmax(0, 1fr); /* senza questo la colonna implicita si allarga al contenuto della timeline */
   grid-template-rows: 48px minmax(0, 1fr) 6px var(--tl-h, 330px);
   height: 100vh;
   height: 100dvh;
@@ -1087,6 +1088,7 @@ input[type='range'] {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   background: var(--panel);
   border-top: 1px solid var(--border);
 }
@@ -1162,13 +1164,13 @@ input[type='range'] {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 22;
+  z-index: 26; /* sopra la testina: un marcatore alla posizione della testina resta cliccabile */
 }
 .marker {
   position: absolute;
-  top: 2px;
+  top: 11px;
   width: 11px;
-  height: 22px;
+  height: 17px;
   padding: 0;
   border: 0;
   background: transparent;

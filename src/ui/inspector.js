@@ -182,13 +182,13 @@ export class Inspector {
       ]),
       section('Formato del video', [aspects, h('p', { class: 'hint' }, 'Cambiando formato i clip restano adattati al nuovo canvas.')]),
       section('Informazioni', [stats]),
-      section('Progetto', [
+      section('File', [
         h('div', { class: 'btn-row wrap' },
           actionButton({ label: 'Nuovo', icon: 'file', onClick: () => actions.newProject() }),
           actionButton({ label: 'Apri…', icon: 'folder', onClick: () => actions.openPackage() }),
           actionButton({ label: 'Salva .ciak', icon: 'download', onClick: () => actions.savePackage() })),
         h('p', { class: 'hint' }, 'Il progetto si salva da solo nel browser. Il file .ciak contiene progetto e media, per spostarlo su un altro computer.'),
-      ], { open: false }),
+      ]),
     );
     this.#controls.push({
       el: null,

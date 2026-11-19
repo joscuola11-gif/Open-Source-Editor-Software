@@ -180,7 +180,7 @@ export class Library {
       const info = this.app.pool.info(m.id);
       const missing = !this.app.pool.has(m.id);
       const card = h('div', {
-        class: `media-card kind-${m.kind}${missing ? ' missing' : ''}`, role: 'listitem', tabindex: '0', draggable: !missing, 'data-id': m.id,
+        class: `media-card kind-${m.kind}${missing ? ' missing' : ''}`, role: 'listitem', tabindex: '0', draggable: missing ? 'false' : 'true', 'data-id': m.id,
         'aria-label': `${m.name}, ${m.kind === 'image' ? 'immagine' : formatDuration(m.duration)}${missing ? ', file mancante' : ''}`,
         onDragstart: (e) => {
           e.dataTransfer.setData('application/x-ciak-media', m.id);

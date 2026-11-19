@@ -142,11 +142,13 @@ export class Player extends Emitter {
 
   /** Attende che il fotogramma in pausa sia stato disegnato (dopo seek/modifiche). */
   async settle() {
-    let last;
-    do {
-      last = this.#pending;
-      await last;
-    } while (last !== this.#pending);
+    for (;;) {
+      // un ridisegno richiesto con invalidate() parte al prossimo frame: aspetta che venga avviato
+      if (this.#dirty) await new Promise((r) => requestAnimationFrame(() => r()));
+      const p = this.#pending;
+      await p;
+      if (!this.#dirty && p === this.#pending) return;
+    }
   }
 
   stepFrames(n) {
