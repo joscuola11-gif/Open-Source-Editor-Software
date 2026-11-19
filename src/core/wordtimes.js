@@ -62,25 +62,35 @@ export function normalizeWords(words, { minWord = 0.06, total = Infinity } = {})
   return out;
 }
 
-/** Il punto più «vuoto» (energia minima) entro ±radius secondi da t; se il calo è piccolo resta t. */
-function snapToDip(vad, t, radius, minDrop = 0.06) {
+/**
+ * Cerca entro ±radius secondi da t il calo di energia più profondo (una pausa fra due parole) e ne restituisce
+ * l'intervallo a metà profondità: {t: punto più basso, start, end}. Se non c'è un calo netto, null.
+ */
+function findGap(vad, t, radius, minDrop = 0.06) {
   const steps = Math.max(1, Math.round(radius / vad.hop));
   let best = t;
-  let bestE = energyAt(vad, t);
-  let sum = bestE;
-  let n = 1;
+  let bestE = Infinity;
+  let sum = 0;
+  let n = 0;
   for (let i = -steps; i <= steps; i++) {
     const tt = t + i * vad.hop;
     const e = energyAt(vad, tt);
     sum += e;
     n++;
-    if (e < bestE - 1e-9) {
+    // a parità di profondità si preferisce il punto più vicino a t
+    if (e < bestE - 1e-9 || (Math.abs(e - bestE) < 1e-9 && Math.abs(tt - t) < Math.abs(best - t))) {
       bestE = e;
       best = tt;
     }
   }
   const mean = sum / n;
-  return mean - bestE >= minDrop ? best : t;
+  if (mean - bestE < minDrop) return null;
+  const half = bestE + (mean - bestE) * 0.5;
+  let a = best;
+  let b = best;
+  while (a - vad.hop >= t - radius && energyAt(vad, a - vad.hop) <= half) a -= vad.hop;
+  while (b + vad.hop <= t + radius && energyAt(vad, b + vad.hop) <= half) b += vad.hop;
+  return { t: best, start: a, end: b + vad.hop };
 }
 
 /**
@@ -92,7 +102,7 @@ function snapToDip(vad, t, radius, minDrop = 0.06) {
  * @param {Array<{text:string,start:number,end:number}>} words
  * @param {{segments: object[], energies: Float32Array, hop: number, floorDb: number, speechDb: number}} vad risultato di detectSpeech
  */
-export function repairWordTimes(words, vad, { blend = 0.4, minWord = 0.07, snap = 0.1, total = Infinity } = {}) {
+export function repairWordTimes(words, vad, { blend = 0.4, minWord = 0.07, snap = 0.1, gaps = true, total = Infinity } = {}) {
   if (!words.length) return [];
   const segs = vad?.segments ?? [];
   const base = normalizeWords(words, { minWord, total });
@@ -133,20 +143,149 @@ export function repairWordTimes(words, vad, { blend = 0.4, minWord = 0.07, snap 
     group[group.length - 1].end = s1;
     i = j + 1;
   }
-  // 3. confini sul calo di energia (solo fra parole dello stesso segmento, mantenendo l'ordine)
+  // 3. confini sul calo di energia (solo fra parole dello stesso segmento, mantenendo l'ordine): la parola finisce dove
+  //    comincia la pausa e la successiva comincia dove la pausa finisce
   for (let k = 0; k + 1 < out.length; k++) {
     if (owner[k] !== owner[k + 1]) continue;
     const a = out[k];
     const b = out[k + 1];
     const t = (a.end + b.start) / 2;
+    // il raggio di ricerca non supera ~metà della più breve delle due parole: altrimenti si finirebbe in un'altra pausa
+    const gap = findGap(vad, t, Math.max(vad.hop * 3, Math.min(snap, 0.5 * Math.min(a.end - a.start, b.end - b.start))));
+    if (!gap) continue;
     const lo = a.start + minWord;
     const hi = b.end - minWord;
-    const snapped = clamp(snapToDip(vad, t, snap), lo, hi);
-    const gap = Math.max(0, b.start - a.end);
-    a.end = snapped - gap / 2;
-    b.start = snapped + gap / 2;
-    if (a.end < a.start + minWord) a.end = a.start + minWord;
-    if (b.start > b.end - minWord) b.start = b.end - minWord;
+    let ge = clamp(gap.start, lo, hi);
+    let gs = clamp(gap.end, ge, hi);
+    if (!gaps) {
+      ge = clamp(gap.t, lo, hi);
+      gs = ge;
+    }
+    a.end = ge;
+    b.start = gs;
   }
   return normalizeWords(out, { minWord, total });
+}
+
+// ---------------------------------------------------------------------------
+// Posizionamento delle parole sulle pause vere (per l'allineamento a un testo noto)
+// ---------------------------------------------------------------------------
+
+/** Tutte le pause (cali di energia) fra a e b secondi: [{t, start, end, depth}], dalla più a sinistra. */
+export function valleysIn(vad, a, b, { minDrop = 0.05, radius = 0.15 } = {}) {
+  const i0 = Math.max(0, Math.floor(a / vad.hop));
+  const i1 = Math.min(vad.energies.length - 1, Math.ceil(b / vad.hop));
+  const en = [];
+  for (let i = i0; i <= i1; i++) en.push(energyAt(vad, i * vad.hop));
+  // media mobile su 3 finestre
+  const sm = en.map((_, i) => (en[Math.max(0, i - 1)] + en[i] + en[Math.min(en.length - 1, i + 1)]) / 3);
+  const R = Math.max(2, Math.round(radius / vad.hop));
+  const found = [];
+  for (let i = 1; i < sm.length - 1; i++) {
+    let isMin = true;
+    let sum = 0;
+    let n = 0;
+    for (let d = -R; d <= R; d++) {
+      const j = i + d;
+      if (j < 0 || j >= sm.length) continue;
+      sum += sm[j];
+      n++;
+      if (sm[j] < sm[i] - 1e-9 || (sm[j] === sm[i] && d < 0)) isMin = false;
+    }
+    const depth = sum / n - sm[i];
+    if (!isMin || depth < minDrop) continue;
+    const half = sm[i] + depth * 0.5;
+    let s = i;
+    let e = i;
+    while (s > 0 && sm[s - 1] <= half) s--;
+    while (e < sm.length - 1 && sm[e + 1] <= half) e++;
+    found.push({ t: (i0 + i) * vad.hop, start: (i0 + s) * vad.hop, end: (i0 + e + 1) * vad.hop, depth });
+  }
+  // pause troppo vicine sono la stessa: si tiene la più profonda
+  const out = [];
+  for (const v of found) {
+    const last = out[out.length - 1];
+    if (last && v.start - last.end < 0.05) {
+      if (v.depth > last.depth) out[out.length - 1] = v;
+    } else out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Colloca le parole di una parte parlata [start, end] sulle pause trovate: programmazione dinamica che sceglie
+ * quali pause sono confini fra parole, in modo che la durata di ogni parola somigli a quella attesa (sillabe).
+ * Se mancano pause (parole attaccate) usa le posizioni proporzionali come ripiego.
+ */
+export function placeWordsByValleys(texts, start, end, vad) {
+  const k = texts.length;
+  if (k === 0) return [];
+  if (k === 1) return [{ text: texts[0], start, end }];
+  const ws = texts.map((t) => wordWeight(t).speech);
+  const wsum = ws.reduce((a, b) => a + b, 0);
+  const len = Math.max(0.05, end - start);
+  const rate = wsum / (len * 0.9); // sillabe al secondo, tolte le pause
+  const valleys = valleysIn(vad, start, end).filter((v) => v.start > start + 0.04 && v.end < end - 0.04);
+  // posizioni proporzionali (ripiego) per ogni confine
+  const cum = [];
+  let c = 0;
+  for (let i = 0; i < k - 1; i++) {
+    c += ws[i];
+    cum.push(start + (c / wsum) * len);
+  }
+  const FREE = 0.9;
+  const layers = [];
+  for (let j = 0; j < k - 1; j++) {
+    const cands = valleys.map((v) => ({ gs: v.end, ge: v.start, cost: -0.8 * Math.min(1, v.depth / 0.4), free: false }));
+    cands.push({ gs: cum[j], ge: cum[j], cost: FREE, free: true });
+    layers.push(cands);
+  }
+  const INF = 1e12;
+  const wordCost = (from, to, j) => {
+    const dur = to - from;
+    if (dur < 0.06) return INF;
+    return Math.abs(Math.log(dur / (ws[j] / rate)));
+  };
+  // dp[j][q] = costo migliore con il confine j sul candidato q (parole 0..j già collocate)
+  const dp = layers.map((l) => new Float64Array(l.length).fill(INF));
+  const back = layers.map((l) => new Int32Array(l.length).fill(-1));
+  layers[0].forEach((q, qi) => {
+    dp[0][qi] = wordCost(start, q.ge, 0) + q.cost;
+  });
+  for (let j = 1; j < layers.length; j++) {
+    layers[j].forEach((q, qi) => {
+      layers[j - 1].forEach((p, pi) => {
+        if (dp[j - 1][pi] >= INF) return;
+        const cost = dp[j - 1][pi] + wordCost(p.gs, q.ge, j) + q.cost;
+        if (cost < dp[j][qi]) {
+          dp[j][qi] = cost;
+          back[j][qi] = pi;
+        }
+      });
+    });
+  }
+  const last = layers.length - 1;
+  let bestQ = -1;
+  let bestC = INF;
+  layers[last].forEach((q, qi) => {
+    const cost = dp[last][qi] + wordCost(q.gs, end, k - 1);
+    if (cost < bestC) {
+      bestC = cost;
+      bestQ = qi;
+    }
+  });
+  if (bestQ < 0) return spreadWords(texts, start, end);
+  const chosen = new Array(layers.length);
+  let q = bestQ;
+  for (let j = last; j >= 0; j--) {
+    chosen[j] = layers[j][q];
+    q = back[j][q];
+  }
+  const out = [];
+  for (let i = 0; i < k; i++) {
+    const s = i === 0 ? start : chosen[i - 1].gs;
+    const e = i === k - 1 ? end : chosen[i].ge;
+    out.push({ text: texts[i], start: s, end: Math.max(e, s + 0.05) });
+  }
+  return out;
 }

@@ -34,7 +34,8 @@ export function speechLike(bursts, { sr = 16000, duration, noiseDb = -50, voiceD
     for (let i = i0; i < i1; i++) {
       const t = (i - i0) / sr;
       const edge = Math.min(1, t / 0.03, (b.end - b.start - t) / 0.04); // attacco e rilascio morbidi
-      const syl = 0.55 + 0.45 * Math.sin(2 * Math.PI * 4 * t + 1.3) ** 2; // sillabe a ~4 Hz
+      // sillabe: a ~4 Hz, oppure `syl` sillabe distribuite sulla durata della parte (picchi al centro di ogni sillaba)
+      const syl = b.syl ? 0.2 + 0.8 * Math.sin((Math.PI * b.syl * t) / (b.end - b.start)) ** 2 : 0.55 + 0.45 * Math.sin(2 * Math.PI * 4 * t + 1.3) ** 2;
       ph += (2 * Math.PI * (f0 * (1 + 0.03 * Math.sin(2 * Math.PI * 0.7 * t)))) / sr;
       let s = 0;
       for (let h = 1; h <= 10; h++) s += Math.sin(h * ph) / h ** 1.1;

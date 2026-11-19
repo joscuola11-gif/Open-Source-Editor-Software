@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { chunkSegments, detectSpeech, energyAt, frameEnergies, inSpeech } from '../../src/core/vad.js';
+import { chunkSegments, detectSpeech, energyAt, frameEnergies, inSpeech, syllableNuclei } from '../../src/core/vad.js';
 import { decodeWav } from '../../src/core/wav.js';
 import { speechLike } from '../helpers/speechlike.js';
 
@@ -106,4 +106,20 @@ test('detectSpeech: prova a caso (durate, rumore, posizioni) non fallisce e dà 
       prevEnd = sg.end;
     }
   }
+});
+
+test('syllableNuclei: conta le sillabe di parole sintetiche con 1-6 sillabe e quelle della voce vera (jfk) senza grandi errori', () => {
+  for (const syl of [1, 2, 3, 4, 5, 6]) {
+    const dur = 0.17 * syl + 0.1;
+    const x = speechLike([{ start: 0.5, end: 0.5 + dur, syl }], { duration: 2 + dur, seed: syl });
+    const v = detectSpeech(x, 16000);
+    const n = syllableNuclei(v, 0.4, 0.6 + dur);
+    assert.ok(Math.abs(n - syl) <= 1, `${syl} sillabe → contate ${n}`);
+  }
+  const { channels, sampleRate } = decodeWav(new Uint8Array(readFileSync(new URL('../fixtures/jfk.wav', import.meta.url))));
+  const v = detectSpeech(channels[0], sampleRate);
+  const counts = v.segments.map((s) => syllableNuclei(v, s.start, s.end));
+  assert.deepEqual(counts.slice(0, 4), [6, 2, 8, 8], 'jfk: «ask not» = 2 sillabe, «what your country can do for you» = 8');
+  assert.equal(syllableNuclei(v, 5, 5.01), 0);
+  assert.equal(syllableNuclei(v, -3, -2), 0);
 });

@@ -138,3 +138,52 @@ export function energyAt(v, t) {
   const span = Math.max(1, v.speechDb - v.floorDb);
   return clamp((v.energies[i] - v.floorDb) / span, 0, 1);
 }
+
+/**
+ * Quanti «nuclei sillabici» (picchi di energia, uno per vocale) ci sono fra a e b secondi. Serve a capire quante sillabe
+ * sono state dette in una parte parlata, indipendentemente da quanto lentamente si parli: molto più affidabile della durata.
+ */
+export function syllableNuclei(vad, a, b, { minProminence = 2, minDistance = 0.085 } = {}) {
+  const i0 = Math.max(0, Math.floor(a / vad.hop));
+  const i1 = Math.min(vad.energies.length - 1, Math.floor(b / vad.hop));
+  if (i1 - i0 < 3) return 0;
+  const sm = [];
+  for (let i = i0; i <= i1; i++) {
+    let s = 0;
+    let n = 0;
+    for (let d = -3; d <= 3; d++) {
+      const j = i + d;
+      if (j >= i0 && j <= i1) {
+        s += vad.energies[j];
+        n++;
+      }
+    }
+    sm.push(s / n);
+  }
+  const peaks = [];
+  for (let i = 1; i < sm.length - 1; i++) {
+    if (!(sm[i] >= sm[i - 1] && sm[i] > sm[i + 1])) continue;
+    let lmin = sm[i];
+    let l = i;
+    while (l > 0 && sm[l - 1] <= sm[i]) {
+      l--;
+      lmin = Math.min(lmin, sm[l]);
+    }
+    let rmin = sm[i];
+    let r = i;
+    while (r < sm.length - 1 && sm[r + 1] <= sm[i]) {
+      r++;
+      rmin = Math.min(rmin, sm[r]);
+    }
+    const prom = sm[i] - Math.max(lmin, rmin);
+    if (prom >= minProminence) peaks.push({ t: (i0 + i) * vad.hop, prom });
+  }
+  const out = [];
+  for (const p of peaks) {
+    const last = out[out.length - 1];
+    if (last && p.t - last.t < minDistance) {
+      if (p.prom > last.prom) out[out.length - 1] = p;
+    } else out.push(p);
+  }
+  return out.length;
+}
