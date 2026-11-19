@@ -17,8 +17,10 @@ if (existsSync(path.join(dest, exe))) {
 }
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'ciak-ffmpeg-'));
 try {
-  execFileSync('npm', ['init', '-y'], { cwd: tmp, stdio: 'ignore' });
-  execFileSync('npm', ['install', 'ffmpeg-static', '--no-audit', '--no-fund'], { cwd: tmp, stdio: 'inherit', env: { ...process.env, npm_config_platform: platform, npm_config_arch: arch } });
+  // su Windows npm è `npm.cmd`: Node lo avvia solo tramite shell
+  const win = process.platform === 'win32';
+  execFileSync(win ? 'npm.cmd' : 'npm', ['init', '-y'], { cwd: tmp, stdio: 'ignore', shell: win });
+  execFileSync(win ? 'npm.cmd' : 'npm', ['install', 'ffmpeg-static', '--no-audit', '--no-fund'], { cwd: tmp, stdio: 'inherit', shell: win, env: { ...process.env, npm_config_platform: platform, npm_config_arch: arch } });
   const src = path.join(tmp, 'node_modules', 'ffmpeg-static');
   mkdirSync(dest, { recursive: true });
   copyFileSync(path.join(src, exe), path.join(dest, exe));
