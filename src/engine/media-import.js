@@ -162,6 +162,23 @@ export async function computePeaks(blob, rate = 50) {
   return { peaks, rate };
 }
 
+/**
+ * Decodifica l'audio di un file in canali Float32 (per gli effetti e l'analisi del ritmo).
+ * @returns {{channels: Float32Array[], sampleRate: number}} oppure lancia un errore comprensibile
+ */
+export async function decodeAudio(blob, { maxSeconds = 1800 } = {}) {
+  const OAC = globalThis.OfflineAudioContext ?? globalThis.webkitOfflineAudioContext;
+  if (!OAC) throw new Error('Questo browser non sa decodificare l\'audio.');
+  let audio;
+  try {
+    audio = await new OAC(1, 1, 44100).decodeAudioData(await blob.arrayBuffer());
+  } catch {
+    throw new Error('Non riesco a leggere l\'audio di questo file (nessun audio o formato non supportato).');
+  }
+  if (audio.duration > maxSeconds) throw new Error(`L\'audio dura ${Math.round(audio.duration / 60)} minuti: per questa funzione il limite è ${Math.round(maxSeconds / 60)}.`);
+  return { channels: Array.from({ length: audio.numberOfChannels }, (_, i) => Float32Array.from(audio.getChannelData(i))), sampleRate: audio.sampleRate };
+}
+
 /** Miniatura di un fotogramma di un elemento video già posizionato (fotogramma fisso). */
 export async function captureFrameBlob(source, width, height, type = 'image/png') {
   const c = document.createElement('canvas');

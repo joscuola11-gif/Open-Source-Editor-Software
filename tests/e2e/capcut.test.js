@@ -448,3 +448,133 @@ test('modelli di testo e animazioni cicliche: i nuovi modelli compaiono, il cicl
     assert.equal(c.anim.loop.speed, 0.5);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------
+// Audio: effetti, normalizzazione, ritmo
+// ---------------------------------------------------------------------------------------------------
+
+import { decodeWav } from '../../src/core/wav.js';
+import { dominantFrequency } from '../../src/core/dsp.js';
+import { readFileSync } from 'node:fs';
+
+const rmsOf = (x, a, b) => Math.sqrt(x.subarray(a, b).reduce((s, v) => s + v * v, 0) / Math.max(1, b - a));
+async function mediaBytes(page, id) {
+  const arr = await page.evaluate(async (mid) => Array.from(new Uint8Array(await window.__ciak.pool.blob(mid).arrayBuffer())), id);
+  return Uint8Array.from(arr);
+}
+/** Apre una sezione del pannello se è chiusa (le sezioni si richiudono a ogni cambio di selezione). */
+async function openSection(page, title) {
+  const closed = page.locator('details.section:not([open])', { has: page.locator('summary', { hasText: title }) });
+  if (await closed.count()) await closed.first().locator('summary').click();
+}
+async function openAudioFx(page) {
+  await inspectorTab(page, 'Audio');
+  await page.locator('details.section summary', { hasText: 'Pulizia e voci' }).click();
+}
+const waitToastText = (page, re, ms = 30000) => page.waitForFunction((src) => [...document.querySelectorAll('.toast')].some((t) => new RegExp(src).test(t.textContent)), re.source, { timeout: ms });
+
+test('audio: la riduzione del rumore abbassa il fruscio nei silenzi e conserva la voce; si annulla', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('noisy.wav')]);
+    await addMedia(page, 0);
+    await page.locator('.clip.kind-audio').first().click();
+    await openAudioFx(page);
+    const mediaBefore = (await clips(page))[0].mediaId;
+    await page.click('#btn-audio-fx');
+    await waitToastText(page, /Meno rumore: fatto/);
+    const c = (await clips(page))[0];
+    assert.notEqual(c.mediaId, mediaBefore, 'il clip usa il nuovo file');
+    const orig = decodeWav(new Uint8Array(readFileSync(m.f('noisy.wav'))));
+    const out = decodeWav(await mediaBytes(page, c.mediaId));
+    const sr = out.sampleRate;
+    const noiseBefore = rmsOf(orig.channels[0], 0, sr * 0.8);
+    const noiseAfter = rmsOf(out.channels[0], 0, sr * 0.8);
+    assert.ok(noiseAfter < noiseBefore * 0.5, `fruscio ${noiseBefore.toFixed(4)} → ${noiseAfter.toFixed(4)}`);
+    const sigBefore = rmsOf(orig.channels[0], sr * 1.3, sr * 2.7);
+    const sigAfter = rmsOf(out.channels[0], sr * 1.3, sr * 2.7);
+    assert.ok(sigAfter > sigBefore * 0.75, `la voce resta (${sigBefore.toFixed(3)} → ${sigAfter.toFixed(3)})`);
+    near(c.duration, 4, 0.1, 'stessa durata');
+    await page.click('#btn-undo');
+    assert.equal((await clips(page))[0].mediaId, mediaBefore, 'annullato');
+  });
+});
+
+test('audio: cambio di altezza (+12 semitoni = ottava) e voce robot su un video (clip audio separato, originale silenziato)', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('tone.wav'), m.f('a.webm')]);
+    await addMedia(page, 0); // tone.wav 660 Hz
+    await page.locator('.clip.kind-audio').first().click();
+    await openAudioFx(page);
+    await page.selectOption('#sel-audio-fx', 'pitch');
+    await page.locator('input[aria-label="Semitoni (valore)"]').fill('12');
+    await page.locator('input[aria-label="Semitoni (valore)"]').press('Enter');
+    await page.click('#btn-audio-fx');
+    await waitToastText(page, /Tono \+12: fatto/);
+    const c = (await clips(page)).find((x) => x.kind === 'audio');
+    const out = decodeWav(await mediaBytes(page, c.mediaId));
+    const f0 = dominantFrequency(out.channels[0], out.sampleRate, out.sampleRate * 0.5);
+    assert.ok(Math.abs(f0 - 1320) < 25, `660 Hz → ${f0.toFixed(0)} Hz (atteso 1320)`);
+    near(c.duration, 3, 0.1);
+
+    // voce robot su un video
+    await page.keyboard.press('Escape');
+    await addMedia(page, 1);
+    await page.locator('.clip.kind-video').first().click();
+    await openAudioFx(page);
+    await page.selectOption('#sel-audio-fx', 'voice:robot');
+    await page.click('#btn-audio-fx');
+    await waitToastText(page, /Robot: fatto/);
+    const cs = await clips(page);
+    const video = cs.find((x) => x.kind === 'video');
+    assert.equal(video.muted, true, 'l\'audio originale del video è silenziato');
+    assert.ok(cs.filter((x) => x.kind === 'audio').length >= 2, 'nasce un clip audio con la voce robot');
+  });
+});
+
+test('audio: normalizza il volume e trova i battiti; taglia a tempo di musica', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('tone.wav'), m.f('beat.wav'), m.f('a.webm')]);
+    // normalizzazione di un audio piano
+    await addMedia(page, 0);
+    await page.locator('.clip.kind-audio').first().click();
+    await openAudioFx(page);
+    await page.locator('details.section summary', { hasText: 'Livello e ritmo' }).click();
+    const v0 = (await clips(page))[0].volume;
+    await page.click('#btn-normalize');
+    await waitToastText(page, /Volume portato a/);
+    const v1 = (await clips(page))[0].volume;
+    assert.ok(v1 > v0 * 1.2, `volume ${v0} → ${v1}`);
+
+    // battiti: una base a 120 al minuto → un marcatore ogni mezzo secondo
+    await page.keyboard.press('Escape');
+    await addMedia(page, 1);
+    await page.locator('.clip.kind-audio').nth(1).click();
+    await inspectorTab(page, 'Audio');
+    await openSection(page, 'Livello e ritmo');
+    await page.click('#btn-find-beats');
+    await waitToastText(page, /Trovati \d+ battiti/);
+    const p = await project(page);
+    const beats = p.markers.filter((x) => x.label === 'Battito').map((x) => x.time).sort((a, b) => a - b);
+    assert.ok(beats.length >= 14 && beats.length <= 17, `battiti trovati (${beats.length})`);
+    const gaps = beats.slice(1).map((b, i) => b - beats[i]);
+    assert.ok(gaps.every((g) => Math.abs(g - 0.5) < 0.06), `intervalli di 0,5 s (${gaps.map((g) => g.toFixed(2))})`);
+
+    // taglio a tempo: un video di 4 s, un taglio ogni 2 battiti = ogni secondo
+    await page.keyboard.press('Escape');
+    await addMedia(page, 2);
+    const videoStart = (await clips(page)).find((x) => x.kind === 'video').start;
+    await page.locator('.clip.kind-video').first().click();
+    await inspectorTab(page, 'Audio');
+    await openSection(page, 'Livello e ritmo');
+    await page.selectOption('#sel-every', '2');
+    await page.click('#btn-cut-beats');
+    await waitToastText(page, /Fatti \d+ tagli/);
+    const vs = (await clips(page)).filter((x) => x.kind === 'video').sort((a, b) => a.start - b.start);
+    assert.ok(vs.length >= 3 && vs.length <= 5, `il video è diviso in ${vs.length} parti`);
+    for (let i = 1; i < vs.length; i++) near(vs[i].start - vs[i - 1].start, vs[i - 1].duration, 0.04, 'senza buchi');
+    assert.ok(vs.every((v) => v.duration > 0.8 && v.duration < 2.2), 'pezzi di circa un secondo');
+    void videoStart;
+    await page.click('#btn-undo');
+    assert.equal((await clips(page)).filter((x) => x.kind === 'video').length, 1);
+  });
+});

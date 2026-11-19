@@ -13,6 +13,9 @@ import { ASPECTS, EFFECTS, EXPORT_SIZES, TEXT_PRESETS } from '../core/presets.js
 import { formatSrt } from '../core/srt.js';
 import { MIME, SUBTITLE_FORMATS, WRITERS, parseSubtitles } from '../core/subtitles.js';
 import { findSilences, removeSilences } from '../core/silence.js';
+import { VOICE_EFFECTS, applyGain, applyVoiceEffect, isolateVoice, loudness, noiseReduce, normalizeGain, pitchShift, removeVoice } from '../core/audio-fx.js';
+import { detectBeats } from '../core/beats.js';
+import { encodeWav } from '../core/wav.js';
 import { defaultGrade, encodeLut, parseCube } from '../core/grade.js';
 import { unzipStore, zipStore } from '../core/zip.js';
 import { AudioEngine } from '../engine/audio-engine.js';
@@ -21,7 +24,7 @@ import { Renderer } from '../engine/renderer.js';
 import { Player } from '../engine/player.js';
 import { Storage } from '../engine/storage.js';
 import { Exporter, QUALITY, availableFormats, downloadBlob, estimateBitrate, exportSize, FORMATS } from '../engine/exporter.js';
-import { VoiceRecorder, computePeaks, kindOfFile, probeMedia, captureFrameBlob } from '../engine/media-import.js';
+import { VoiceRecorder, computePeaks, decodeAudio, kindOfFile, probeMedia, captureFrameBlob } from '../engine/media-import.js';
 import { h, isTyping } from './dom.js';
 import { icon } from './icons.js';
 import { prefs } from './prefs.js';
@@ -976,6 +979,135 @@ export class App {
         if (!plan) return toast('Non si possono spostare così: uscirebbero dalla timeline', { type: 'warn' });
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
+      },
+      /** Porzione di audio del clip (la parte di file che il clip usa), decodificata: la base degli effetti e dell'analisi. */
+      async clipAudio(clip) {
+        const blob = app.pool.blob(clip.mediaId);
+        if (!blob) throw new Error('File non disponibile.');
+        const { channels, sampleRate } = await decodeAudio(blob);
+        const a = Math.max(0, Math.floor(clip.in * sampleRate));
+        const b = Math.min(channels[0].length, Math.ceil((clip.in + clip.duration * clip.speed) * sampleRate));
+        if (b - a < sampleRate * 0.05) throw new Error('La parte di audio usata dal clip è troppo breve.');
+        return { channels: channels.map((c) => c.slice(a, b)), sampleRate };
+      },
+      /**
+       * Effetti audio «offline»: riduzione del rumore, voci, altezza, togli/isola la voce. Il risultato è un nuovo file audio
+       * che prende il posto della parte usata (per i video: un clip audio separato, mentre l'audio originale si silenzia).
+       */
+      async applyAudioFx({ clipId, kind, id, amount = 70, semitones = 0 }) {
+        const f = findClip(app.store.project, clipId ?? app.inspector.clipId);
+        if (!f || (f.clip.kind !== 'audio' && f.clip.kind !== 'video')) return toast('Seleziona un clip audio o video', { type: 'warn' });
+        const clip = f.clip;
+        const working = toast('Elaborazione dell’audio…', { ms: 120000 });
+        try {
+          const { channels, sampleRate } = await A.clipAudio(clip);
+          let out;
+          if (kind === 'noise') out = noiseReduce(channels, { amount: amount / 100 });
+          else if (kind === 'pitch') {
+            if (!semitones) throw new Error('Scegli di quanti semitoni cambiare il tono.');
+            out = pitchShift(channels, semitones);
+          } else if (kind === 'voice') out = applyVoiceEffect(channels, sampleRate, id);
+          else if (kind === 'removeVoice') out = removeVoice(channels);
+          else if (kind === 'isolateVoice') out = isolateVoice(channels, sampleRate);
+          else throw new Error('Effetto sconosciuto');
+          const label = { noise: 'Meno rumore', pitch: `Tono ${semitones > 0 ? '+' : ''}${semitones}`, voice: VOICE_EFFECTS[id]?.label ?? 'Effetto', removeVoice: 'Senza voce', isolateVoice: 'Solo voce' }[kind];
+          const bytes = encodeWav(out, sampleRate);
+          const mid = uid('m');
+          const file = new File([bytes], `${clip.name || 'Audio'} · ${label}.wav`, { type: 'audio/wav' });
+          const dur = out[0].length / sampleRate;
+          app.pool.add(mid, file);
+          app.storage.putMedia(mid, file).catch(() => {});
+          const r = app.commit(`Audio: ${label}`, (d) => {
+            d.media[mid] = { id: mid, name: file.name, kind: 'audio', mime: 'audio/wav', size: file.size, duration: dur, width: 0, height: 0, hasAudio: true };
+            const q = findClip(d, clip.id).clip;
+            if (q.kind === 'audio') {
+              q.mediaId = mid;
+              q.in = 0;
+              q.duration = Math.min(q.duration, dur / q.speed);
+              q.name = file.name;
+              return q;
+            }
+            const ac = createClip('audio', { name: `${label} · ${q.name}`, mediaId: mid, start: q.start, duration: Math.min(q.duration, dur / q.speed), in: 0, speed: q.speed, volume: q.volume });
+            const track = trackWithRoom(d, 'audio', q.start, ac.duration);
+            addClip(d, track.id, ac, q.start);
+            q.muted = true;
+            return ac;
+          });
+          if (r.ok) {
+            app.#enrich(mid, true);
+            toast(`${label}: fatto.`, { type: 'success' });
+          } else app.pool.removeMedia(mid);
+        } catch (e) {
+          toast(e.message, { type: 'warn' });
+        } finally {
+          working?.remove?.();
+        }
+      },
+      /** Porta il volume del clip a un livello costante (come «normalizza» di CapCut). */
+      async normalizeClip({ clipId, targetDb = -16 }) {
+        const f = findClip(app.store.project, clipId ?? app.inspector.clipId);
+        if (!f || (f.clip.kind !== 'audio' && f.clip.kind !== 'video')) return toast('Seleziona un clip audio o video', { type: 'warn' });
+        try {
+          const { channels, sampleRate } = await A.clipAudio(f.clip);
+          const before = loudness(channels, sampleRate);
+          if (before.rmsDb < -80) return toast('Questo clip è praticamente muto.', { type: 'warn' });
+          const gain = normalizeGain(applyGain(channels, f.clip.volume), sampleRate, { targetDb, ceilDb: -1 });
+          const vol = Math.min(4, f.clip.volume * gain);
+          app.commit('Normalizza il volume', (d) => { findClip(d, f.clip.id).clip.volume = vol; });
+          toast(`Volume portato a ${Math.round(vol * 100)}% (livello medio ${targetDb} dB).`, { type: 'success' });
+        } catch (e) {
+          toast(e.message, { type: 'warn' });
+        }
+      },
+      /** Trova i battiti della musica e li segna con dei marcatori sulla timeline. */
+      async findBeats({ clipId }) {
+        const f = findClip(app.store.project, clipId ?? app.inspector.clipId);
+        if (!f || (f.clip.kind !== 'audio' && f.clip.kind !== 'video')) return toast('Seleziona un clip audio o video', { type: 'warn' });
+        const clip = f.clip;
+        const working = toast('Ascolto il ritmo…', { ms: 120000 });
+        try {
+          const { channels, sampleRate } = await A.clipAudio(clip);
+          const r = detectBeats(channels, sampleRate);
+          if (!r.bpm || !r.beats.length) return toast('Non sento un ritmo regolare in questo audio.', { type: 'warn' });
+          const times = r.beats.slice(0, 600).map((t) => clip.start + t / clip.speed).filter((t) => t < clipEnd(clip));
+          app.commit('Segna i battiti', (d) => {
+            d.markers = d.markers.filter((m) => m.label !== 'Battito');
+            for (const t of times) addMarker(d, t, 'Battito');
+          });
+          app.timeline.ensureVisible(times[0]);
+          toast(`Trovati ${times.length} battiti (circa ${Math.round(r.bpm)} al minuto).`, { type: 'success' });
+        } catch (e) {
+          toast(e.message, { type: 'warn' });
+        } finally {
+          working?.remove?.();
+        }
+      },
+      /** Divide i clip selezionati (o quelli sotto i battiti) a tempo di musica: ogni `every` battiti. */
+      cutOnBeats({ every = 1 }) {
+        const p = app.store.project;
+        const beats = p.markers.filter((m) => m.label === 'Battito').map((m) => m.time).sort((a, b) => a - b);
+        if (!beats.length) return toast('Prima trova i battiti di una musica (sezione «Ritmo»).', { type: 'warn' });
+        let ids = app.selection.ids.filter((id) => { const c = findClip(p, id)?.clip; return c && isVisualKind(c.kind); });
+        if (!ids.length) ids = allClips(p).filter((c) => isVisualKind(c.kind) && c.role !== 'subtitle').map((c) => c.id);
+        const cuts = beats.filter((_, i) => i % Math.max(1, every) === 0);
+        let n = 0;
+        const r = app.commit('Taglia a tempo di musica', (d) => {
+          for (const t of cuts) {
+            for (const id of [...ids]) {
+              const c = findClip(d, id)?.clip;
+              if (!c || !(t > c.start + 0.05 && t < clipEnd(c) - 0.05)) continue;
+              try {
+                const right = splitClip(d, id, t);
+                ids.push(right.id); // la parte destra può essere divisa dai battiti successivi
+                n++;
+              } catch (e) {
+                if (!(e instanceof EditError)) throw e;
+              }
+            }
+          }
+          if (!n) throw new EditError('I battiti non cadono dentro i clip scelti.');
+        });
+        if (r.ok) toast(`Fatti ${n} tagli a tempo.`, { type: 'success' });
       },
       /** Toglie le pause (silenzi) dal clip: dall'inviluppo audio già calcolato, senza rielaborare il file. */
       removeSilences({ clipId, threshold, minSilence, keep, all = true }) {

@@ -14,6 +14,7 @@ import { isVisualKind } from '../core/project.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
 import { KARAOKE_MODES } from '../core/karaoke.js';
 import { SILENCE_DEFAULTS, findSilences, timelineRanges } from '../core/silence.js';
+import { VOICE_EFFECTS } from '../core/audio-fx.js';
 
 const TABS = {
   video: [['video', 'Video'], ['audio', 'Audio'], ['speed', 'Velocità'], ['anim', 'Animazione'], ['adjust', 'Regolazione'], ['fx', 'Effetti']],
@@ -31,6 +32,7 @@ const PROP_UNIT = { x: 100, y: 100, scale: 100, rotation: 1, opacity: 100, volum
 export class Inspector {
   #controls = [];
   #hslBand = 'red';
+  #fx = { kind: 'noise', amount: 70, semitones: 0, target: -16, every: 1 };
   #sil = { threshold: SILENCE_DEFAULTS.threshold * 100, minSilence: SILENCE_DEFAULTS.minSilence, keep: SILENCE_DEFAULTS.keep, all: true };
   #key = '';
   #tab = {};
@@ -311,7 +313,7 @@ export class Inspector {
         this.#add(toggleControl(this.ctx, { label: 'Silenzia questo clip', get: (c) => c.muted, set: (c, v) => { c.muted = v; } })),
       ]),
     ];
-    out.push(this.#silenceSection());
+    out.push(this.#silenceSection(), this.#audioFxSection(), this.#loudnessBeatsSection());
     if (clip.kind === 'video') {
       out.push(section('Estrazione', [
         h('div', { class: 'btn-row' }, actionButton({ label: 'Estrai audio', icon: 'music', onClick: () => actions.detachAudio() })),
@@ -319,6 +321,78 @@ export class Inspector {
       ]));
     }
     return out;
+  }
+
+  /** Pulizia e voci: riduzione del rumore, altezza del suono, effetti voce, togli/isola la voce. */
+  #audioFxSection() {
+    const f = this.#fx;
+    const kinds = [
+      { id: 'noise', label: 'Riduci il rumore di fondo', hint: 'Toglie fruscii e rumori costanti (ventola, ronzio, vento leggero).' },
+      { id: 'pitch', label: 'Cambia l’altezza del suono', hint: 'Alza o abbassa il tono senza cambiare la velocità.' },
+      ...Object.entries(VOICE_EFFECTS).map(([id, v]) => ({ id: `voice:${id}`, label: `Voce: ${v.label}`, hint: v.hint })),
+      { id: 'removeVoice', label: 'Togli la voce da un brano', hint: 'Per brani stereo: elimina ciò che sta al centro (di solito la voce). Funziona bene solo se la voce è registrata al centro.' },
+      { id: 'isolateVoice', label: 'Isola la voce (approssimato)', hint: 'Tiene ciò che sta al centro e nelle frequenze della voce: è un’approssimazione, non una separazione perfetta.' },
+    ];
+    const sel = h('select', { id: 'sel-audio-fx', 'aria-label': 'Effetto audio' }, kinds.map((k) => h('option', { value: k.id }, k.label)));
+    const hint = h('p', { class: 'hint', id: 'audio-fx-hint' }, kinds[0].hint);
+    const amount = h('div', { class: 'ctl slider', id: 'fx-amount-row' });
+    const semis = h('div', { class: 'ctl slider', id: 'fx-semis-row' });
+    const mk = (label, key, min, max, step, unit) => {
+      const range = h('input', { type: 'range', min, max, step, 'aria-label': label });
+      const num = h('input', { type: 'number', class: 'num', min, max, step, 'aria-label': `${label} (valore)` });
+      const set = (v) => {
+        const n = clamp(Number(v), min, max);
+        if (!Number.isFinite(n)) return;
+        f[key] = n;
+        range.value = String(n);
+        if (document.activeElement !== num) num.value = String(n);
+      };
+      range.value = String(f[key]);
+      num.value = String(f[key]);
+      range.addEventListener('input', () => set(range.value));
+      num.addEventListener('change', () => set(num.value));
+      return [h('label', { class: 'ctl-label' }, label), range, h('span', { class: 'num-wrap' }, num, h('span', { class: 'unit' }, unit))];
+    };
+    amount.append(...mk('Intensità', 'amount', 10, 100, 5, '%'));
+    semis.append(...mk('Semitoni', 'semitones', -12, 12, 1, ''));
+    const refresh = () => {
+      const k = kinds.find((x) => x.id === sel.value);
+      hint.textContent = k?.hint ?? '';
+      amount.hidden = sel.value !== 'noise';
+      semis.hidden = sel.value !== 'pitch';
+    };
+    sel.addEventListener('change', refresh);
+    refresh();
+    return section('Pulizia e voci', [
+      h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Effetto'), sel),
+      amount,
+      semis,
+      hint,
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', id: 'btn-audio-fx', onClick: () => {
+        const v = sel.value;
+        const base = { clipId: this.clipId, amount: f.amount, semitones: f.semitones };
+        this.app.actions.applyAudioFx(v.startsWith('voice:') ? { ...base, kind: 'voice', id: v.slice(6) } : { ...base, kind: v });
+      } }, icon('music', 14), 'Applica')),
+      h('p', { class: 'hint' }, 'Il risultato è un nuovo file audio che sostituisce quello del clip (per i video: un clip audio separato, mentre l’audio originale si silenzia). Si annulla con un solo passo.'),
+    ], { open: false });
+  }
+
+  /** Livello del volume e ritmo (battiti). */
+  #loudnessBeatsSection() {
+    const f = this.#fx;
+    const target = h('select', { id: 'sel-target', 'aria-label': 'Livello desiderato' }, [[-16, 'Voce (−16 dB)'], [-14, 'Musica (−14 dB)'], [-20, 'Sottofondo (−20 dB)']].map(([v, l]) => h('option', { value: v }, l)));
+    target.addEventListener('change', () => { f.target = Number(target.value); });
+    const every = h('select', { id: 'sel-every', 'aria-label': 'Un taglio ogni' }, [[1, 'Ogni battito'], [2, 'Ogni 2 battiti'], [4, 'Ogni 4 battiti (una battuta)'], [8, 'Ogni 8 battiti']].map(([v, l]) => h('option', { value: v }, l)));
+    every.addEventListener('change', () => { f.every = Number(every.value); });
+    return section('Livello e ritmo', [
+      h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Livello'), target),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', id: 'btn-normalize', onClick: () => this.app.actions.normalizeClip({ clipId: this.clipId, targetDb: f.target }) }, 'Normalizza il volume')),
+      h('p', { class: 'hint' }, 'Porta il volume medio al livello scelto senza far distorcere i picchi.'),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', id: 'btn-find-beats', onClick: () => this.app.actions.findBeats({ clipId: this.clipId }) }, 'Trova i battiti')),
+      h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Taglia'), every),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', id: 'btn-cut-beats', onClick: () => this.app.actions.cutOnBeats({ every: f.every }) }, icon('scissors', 14), 'Taglia a tempo di musica')),
+      h('p', { class: 'hint' }, 'Prima segna i battiti di una musica (marcatori «Battito»), poi seleziona i clip video da dividere (o nessuno: si dividono tutti) e premi «Taglia a tempo». La calamita si aggancia ai battiti.'),
+    ], { open: false });
   }
 
   /** Rimozione delle pause: soglia, durata minima e margine; mostra subito quante pause trova. */
