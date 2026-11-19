@@ -21,9 +21,87 @@ export const EASINGS = {
   hold: () => 0,
 };
 
-export function easeFn(name) {
-  return EASINGS[name] ?? EASINGS.linear;
+// ---- curve di Bézier personalizzate: 'bezier(x1,y1,x2,y2)' come in CSS (x fra 0 e 1, y anche fuori: superamento/rimbalzo) ----
+export function parseBezier(str) {
+  const m = /^bezier\(\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*,\s*(-?\d*\.?\d+)\s*\)$/.exec(String(str));
+  if (!m) return null;
+  const [x1, y1, x2, y2] = m.slice(1).map(Number);
+  if (![x1, y1, x2, y2].every(Number.isFinite) || x1 < 0 || x1 > 1 || x2 < 0 || x2 > 1 || Math.abs(y1) > 3 || Math.abs(y2) > 3) return null;
+  return [x1, y1, x2, y2];
 }
+export const bezierString = (x1, y1, x2, y2) => `bezier(${[x1, y1, x2, y2].map((v) => +v.toFixed(2)).join(',')})`;
+
+/** Funzione di interpolazione della curva di Bézier cubica (0,0)–(x1,y1)–(x2,y2)–(1,1). */
+export function cubicBezier(x1, y1, x2, y2) {
+  const cx = 3 * x1;
+  const bx = 3 * (x2 - x1) - cx;
+  const ax = 1 - cx - bx;
+  const cy = 3 * y1;
+  const by = 3 * (y2 - y1) - cy;
+  const ay = 1 - cy - by;
+  const X = (t) => ((ax * t + bx) * t + cx) * t;
+  const Y = (t) => ((ay * t + by) * t + cy) * t;
+  const dX = (t) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x) => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let t = x;
+    for (let i = 0; i < 8; i++) {
+      const e = X(t) - x;
+      if (Math.abs(e) < 1e-7) return Y(t);
+      const d = dX(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= e / d;
+    }
+    let lo = 0;
+    let hi = 1;
+    t = x;
+    for (let i = 0; i < 40; i++) {
+      const e = X(t) - x;
+      if (Math.abs(e) < 1e-7) break;
+      if (e > 0) hi = t;
+      else lo = t;
+      t = (lo + hi) / 2;
+    }
+    return Y(t);
+  };
+}
+
+const bezierCache = new Map();
+export function easeFn(name) {
+  const known = EASINGS[name];
+  if (known) return known;
+  if (typeof name === 'string' && name.startsWith('bezier(')) {
+    let f = bezierCache.get(name);
+    if (!f) {
+      const b = parseBezier(name);
+      f = b ? cubicBezier(...b) : EASINGS.linear;
+      if (bezierCache.size > 200) bezierCache.clear();
+      bezierCache.set(name, f);
+    }
+    return f;
+  }
+  return EASINGS.linear;
+}
+
+/** Nome di interpolazione valido, altrimenti «linear» (progetti letti da file). */
+export function sanitizeEasing(e) {
+  if (typeof e !== 'string') return 'linear';
+  if (EASINGS[e]) return e;
+  const b = parseBezier(e);
+  return b ? bezierString(...b) : 'linear';
+}
+
+/** Curve pronte per l'editor. */
+export const BEZIER_PRESETS = [
+  { id: 'linear', label: 'Lineare', e: 'linear', b: [0, 0, 1, 1] },
+  { id: 'smooth', label: 'Morbido', e: 'bezier(0.42,0,0.58,1)', b: [0.42, 0, 0.58, 1] },
+  { id: 'ease-in', label: 'Parte piano', e: 'bezier(0.55,0,1,0.45)', b: [0.55, 0, 1, 0.45] },
+  { id: 'ease-out', label: 'Finisce piano', e: 'bezier(0,0.55,0.45,1)', b: [0, 0.55, 0.45, 1] },
+  { id: 'snap', label: 'Scatto veloce', e: 'bezier(0.9,0,0.1,1)', b: [0.9, 0, 0.1, 1] },
+  { id: 'anticipate', label: 'Prende la rincorsa', e: 'bezier(0.68,-0.55,0.27,1.55)', b: [0.68, -0.55, 0.27, 1.55] },
+  { id: 'overshoot', label: 'Supera e torna', e: 'bezier(0.34,1.56,0.64,1)', b: [0.34, 1.56, 0.64, 1] },
+];
 
 export function baseValue(clip, prop) {
   return prop === 'volume' ? clip.volume : clip.transform[prop];

@@ -9,6 +9,7 @@
 
 import { clamp, isNum, mergeDeep, uid } from './util.js';
 import { MAX_SPEED, MIN_SPEED } from './presets.js';
+import { sanitizeEasing } from './keyframes.js';
 import { defaultGrade, sanitizeGrade, sanitizeLuts } from './grade.js';
 import { defaultKaraoke, sanitizeKaraoke, sanitizeWords } from './karaoke.js';
 import { sanitizeLoop } from './animations.js';
@@ -200,7 +201,7 @@ export function sanitizeClip(raw, p) {
   }
   clip.anim.loop = sanitizeLoop(clip.anim.loop);
   for (const [prop, kfs] of Object.entries(clip.keyframes ?? {})) {
-    const clean = (Array.isArray(kfs) ? kfs : []).filter((k) => k && isNum(k.t) && isNum(k.v)).map((k) => ({ t: k.t, v: k.v, e: typeof k.e === 'string' ? k.e : 'linear' }));
+    const clean = (Array.isArray(kfs) ? kfs : []).filter((k) => k && isNum(k.t) && isNum(k.v)).map((k) => ({ t: k.t, v: k.v, e: sanitizeEasing(k.e) }));
     clean.sort((a, b) => a.t - b.t);
     if (clean.length) clip.keyframes[prop] = clean;
     else delete clip.keyframes[prop];

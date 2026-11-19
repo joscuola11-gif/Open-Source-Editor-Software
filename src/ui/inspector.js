@@ -14,6 +14,7 @@ import { isVisualKind } from '../core/project.js';
 import { LAYOUTS } from '../core/layouts.js';
 import { CAMERA_MOVES } from '../core/camera.js';
 import { speedCurveEditor } from './speed-curve.js';
+import { curveEditor } from './curve-editor.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
 import { KARAOKE_MODES } from '../core/karaoke.js';
 import { SILENCE_DEFAULTS, findSilences, timelineRanges } from '../core/silence.js';
@@ -589,6 +590,8 @@ export class Inspector {
     return out;
   }
 
+  #openCurves = new Set();
+
   #keyframeList(clip) {
     const { store, player } = this.app;
     const wrap = h('div', { class: 'kf-list' });
@@ -600,14 +603,34 @@ export class Inspector {
     for (const prop of props) {
       wrap.append(h('h4', { class: 'kf-h' }, PROP_LABEL[prop], h('button', { class: 'icon-btn small', type: 'button', title: 'Rimuovi tutti i keyframe di questa proprietà', 'aria-label': `Rimuovi i keyframe ${PROP_LABEL[prop]}`, onClick: () => this.app.actions.clearKeyframes(prop) }, icon('trash', 13))));
       clip.keyframes[prop].forEach((k, i) => {
-        const sel = h('select', { class: 'mini-select', 'aria-label': 'Interpolazione' }, Object.entries(EASING_LABELS).map(([id, label]) => h('option', { value: id }, label)));
+        const custom = k.e.startsWith('bezier(');
+        const sel = h('select', { class: 'mini-select', 'aria-label': 'Interpolazione' }, [...Object.entries(EASING_LABELS).map(([id, label]) => h('option', { value: id }, label)), custom ? h('option', { value: k.e }, 'Personalizzata') : null]);
         sel.value = k.e;
         sel.addEventListener('change', () => store.commit('Interpolazione', (p) => { const c = findClip(p, clip.id)?.clip; if (c?.keyframes[prop]?.[i]) c.keyframes[prop][i].e = sel.value; }));
+        // l'editor resta aperto anche quando il pannello si ridisegna dopo una modifica
+        const openKey = `${clip.id}:${prop}:${i}`;
+        const editorHost = h('div', { class: 'kf-curve', hidden: !this.#openCurves.has(openKey) });
+        const fillEditor = () => {
+          if (editorHost.firstChild) return;
+          if (k.e === 'hold') editorHost.append(h('p', { class: 'hint' }, 'L’interpolazione «Scatto» non ha una curva: scegline un’altra dall’elenco.'));
+          else editorHost.append(curveEditor({ value: k.e, onChange: (e) => store.commit('Curva del keyframe', (p) => { const c = findClip(p, clip.id)?.clip; if (c?.keyframes[prop]?.[i]) c.keyframes[prop][i].e = e; }) }));
+        };
+        if (!editorHost.hidden) fillEditor();
+        const curveBtn = h('button', { class: 'icon-btn small', type: 'button', 'data-kf-curve': `${prop}-${i}`, title: 'Modifica la curva del movimento', 'aria-label': 'Modifica la curva', onClick: () => {
+          editorHost.hidden = !editorHost.hidden;
+          if (editorHost.hidden) this.#openCurves.delete(openKey);
+          else {
+            this.#openCurves.add(openKey);
+            fillEditor();
+          }
+        } }, icon('gauge', 13));
         wrap.append(h('div', { class: 'kf-row' },
           h('button', { class: 'kf-time', type: 'button', title: 'Vai a questo keyframe', onClick: () => player.seek(clip.start + k.t) }, `${formatDuration(k.t, 2)}`),
           h('span', { class: 'kf-val' }, `${+(k.v * PROP_UNIT[prop]).toFixed(1)}${prop === 'rotation' ? '°' : '%'}`),
           sel,
-          h('button', { class: 'icon-btn small', type: 'button', 'aria-label': 'Elimina keyframe', onClick: () => store.commit('Elimina keyframe', (p) => { const c = findClip(p, clip.id)?.clip; if (c) removeKeyframeAt(c, prop, k.t, 1e-6); }) }, icon('x', 13))));
+          curveBtn,
+          h('button', { class: 'icon-btn small', type: 'button', 'aria-label': 'Elimina keyframe', onClick: () => store.commit('Elimina keyframe', (p) => { const c = findClip(p, clip.id)?.clip; if (c) removeKeyframeAt(c, prop, k.t, 1e-6); }) }, icon('x', 13))),
+          editorHost);
       });
     }
     return wrap;

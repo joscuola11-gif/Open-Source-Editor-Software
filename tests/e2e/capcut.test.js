@@ -1194,3 +1194,50 @@ test('curva di velocità: i punti si trascinano, si aggiungono con doppio clic e
     assert.equal((await clips(page)).length, 1);
   });
 });
+
+// ---------------------------------------------------------------- curva dei keyframe
+test('curva dei keyframe: scegli una curva pronta o trascina le maniglie; l’interpolazione cambia davvero', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('green.webm')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    // due keyframe di posizione X: 0 a inizio clip, 50% a 2 s
+    await page.evaluate(() => window.__ciak.commit('kf', (d) => {
+      const c = d.tracks.flatMap((t) => t.clips)[0];
+      c.keyframes.x = [{ t: 0, v: 0, e: 'linear' }, { t: 2, v: 0.4, e: 'linear' }];
+    }));
+    await inspectorTab(page, 'Animazione');
+    await page.locator('[data-kf-curve="x-0"]').click();
+    await page.waitForSelector('.curve-handle');
+    // curva pronta: «Scatto veloce»
+    await page.click('[data-curve-preset="snap"]');
+    let e = await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].keyframes.x[0].e);
+    assert.equal(e, 'bezier(0.9,0,0.1,1)');
+    // il valore a 0,3 s resta indietro rispetto alla lineare (0.4 * 0.3/2 = 0.06)
+    const v = await page.evaluate(async () => {
+      const { valueAt } = await import('/src/core/keyframes.js');
+      return valueAt(window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0], 'x', 0.3);
+    });
+    assert.ok(v < 0.03, `con «scatto veloce» a 0,3 s è ancora quasi fermo (${v})`);
+    // l'elenco mostra «Personalizzata» o la curva pronta e il progetto resta valido dopo ricarica del salvataggio
+    await page.waitForTimeout(900);
+    // trascina la prima maniglia
+    await page.locator('[data-handle="1"]').scrollIntoViewIfNeeded();
+    const h1 = await page.locator('[data-handle="1"]').boundingBox();
+    await page.mouse.move(h1.x + h1.width / 2, h1.y + h1.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(h1.x + 40, h1.y - 40, { steps: 6 });
+    await page.mouse.up();
+    e = await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].keyframes.x[0].e);
+    assert.match(e, /^bezier\(/);
+    assert.notEqual(e, 'bezier(0.9,0,0.1,1)', 'la maniglia si è mossa');
+    // si annulla con un passo e il progetto non si rompe
+    await page.click('#btn-undo');
+    const after = await page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].keyframes.x[0].e);
+    assert.equal(after, 'bezier(0.9,0,0.1,1)');
+    // un keyframe «Scatto» (hold) non ha curva da modificare
+    await page.evaluate(() => window.__ciak.commit('hold', (d) => { d.tracks.flatMap((t) => t.clips)[0].keyframes.x[1].e = 'hold'; }));
+    await page.locator('[data-kf-curve="x-1"]').click();
+    assert.match(await page.textContent('.kf-curve:not([hidden])'), /Scatto/);
+  });
+});
