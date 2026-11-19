@@ -336,3 +336,74 @@ test('tema chiaro/scuro e layout a schermo ridotto senza scorrimenti orizzontali
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------------
+// Esportazione di solo audio (WAV, MP3) e di GIF animata
+// ---------------------------------------------------------------------------------------------------
+
+async function exportAs(page, format) {
+  await page.click('#btn-export');
+  await page.waitForSelector('dialog.dialog[open]');
+  await page.selectOption('#exp-format', format);
+  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.click('button[data-act="start"]')]);
+  await page.waitForSelector('.exp-result .ok', { timeout: 60000 });
+  return saveDownload(download, `export.${format}`);
+}
+
+test('ESPORTAZIONE solo audio: WAV e MP3 con la durata del progetto, stereo, decodificabili e con la musica dentro', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('tone.wav'), m.f('b.webm')]);
+    await addMedia(page, 0); // tone.wav 3 s (660 Hz)
+    await page.waitForSelector('.clip');
+    const wav = await exportAs(page, 'wav');
+    const info = ffprobe(wav);
+    assert.ok(info.audio, 'traccia audio');
+    assert.equal(info.audio.codec_name, 'pcm_s16le');
+    assert.equal(Number(info.audio.channels), 2);
+    near(info.duration, 3, 0.1, 'durata del WAV');
+    // contenuto: ffmpeg misura il volume medio, non deve essere silenzio
+    const vol = spawnSync('ffmpeg', ['-v', 'info', '-i', wav, '-af', 'volumedetect', '-f', 'null', '-'], { encoding: 'utf8' }).stderr;
+    const mean = Number(/mean_volume: (-?[\d.]+) dB/.exec(vol)?.[1]);
+    assert.ok(mean > -40, `il file contiene audio (volume medio ${mean} dB)`);
+  });
+});
+
+test('ESPORTAZIONE MP3: file valido, bitrate e durata corretti', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('tone.wav')]);
+    await addMedia(page, 0);
+    await page.waitForSelector('.clip');
+    const mp3 = await exportAs(page, 'mp3');
+    const info = ffprobe(mp3);
+    assert.equal(info.audio.codec_name, 'mp3');
+    assert.equal(Number(info.audio.channels), 2);
+    near(info.duration, 3, 0.15, 'durata dell\'MP3');
+    near(Number(info.audio.bit_rate) / 1000, 192, 8, 'bitrate');
+    const dec = spawnSync('ffmpeg', ['-v', 'error', '-i', mp3, '-f', 'null', '-'], { encoding: 'utf8' });
+    assert.equal(dec.stderr.trim(), '', `errori di decodifica: ${dec.stderr}`);
+  });
+});
+
+test('ESPORTAZIONE GIF: animazione valida con i fotogrammi giusti e le dimensioni attese', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('mid.png')]);
+    await addMedia(page, 0);
+    await page.waitForSelector('.clip');
+    await page.evaluate(() => {
+      const id = window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].id;
+      window.__ciak.store.commit('prova', (p) => { p.tracks.flatMap((t) => t.clips).find((c) => c.id === id).duration = 2; });
+    });
+    const gif = await exportAs(page, 'gif');
+    const info = ffprobe(gif);
+    assert.equal(info.video.codec_name, 'gif');
+    assert.ok(Math.min(Number(info.video.width), Number(info.video.height)) <= 480, `lato corto al massimo 480 (${info.video.width}×${info.video.height})`);
+    const proj = await page.evaluate(() => window.__ciak.store.project.settings);
+    near(Number(info.video.width) / Number(info.video.height), proj.width / proj.height, 0.03, 'stesse proporzioni del progetto');
+    near(info.duration, 2, 0.2, 'durata della GIF');
+    const frames = Number(spawnSync('ffprobe', ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', gif], { encoding: 'utf8' }).stdout.trim());
+    assert.ok(frames >= 22 && frames <= 26, `fotogrammi della GIF (${frames})`);
+    // i colori ci sono (non è tutta nera): fotogramma al secondo 1
+    const px = spawnSync('ffmpeg', ['-v', 'error', '-ss', '1', '-i', gif, '-frames:v', '1', '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { encoding: 'buffer' }).stdout;
+    assert.ok(px.length === 3 && px[0] + px[1] + px[2] > 60, `GIF non nera (${[...px]})`);
+  });
+});

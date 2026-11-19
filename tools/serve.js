@@ -20,6 +20,11 @@ const MIME = {
   '.srt': 'text/plain; charset=utf-8',
 };
 
+const IMPORTS = {
+  '@breezystack/lamejs': '/node_modules/@breezystack/lamejs/dist/lamejs.js',
+  gifenc: '/node_modules/gifenc/dist/gifenc.esm.js',
+};
+
 export function createServer(root = ROOT) {
   return http.createServer(async (req, res) => {
     try {
@@ -36,7 +41,11 @@ export function createServer(root = ROOT) {
         res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Non trovato');
         return;
       }
-      const data = await readFile(file);
+      let data = await readFile(file);
+      // in sviluppo i moduli si caricano senza bundler: le librerie esterne si risolvono con una «import map»
+      if (path.basename(file) === 'index.html' && file === path.join(root, 'index.html')) {
+        data = Buffer.from(data.toString('utf8').replace('<head>', `<head>\n    <script type="importmap">${JSON.stringify({ imports: IMPORTS })}</script>`));
+      }
       const type = MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
       // le richieste Range servono ai <video> per gli spostamenti rapidi
       const range = req.headers.range;

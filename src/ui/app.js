@@ -23,6 +23,7 @@ import { MediaPool } from '../engine/media-pool.js';
 import { Renderer } from '../engine/renderer.js';
 import { Player } from '../engine/player.js';
 import { Storage } from '../engine/storage.js';
+import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export.js';
 import { Exporter, QUALITY, availableFormats, downloadBlob, estimateBitrate, exportSize, FORMATS } from '../engine/exporter.js';
 import { VoiceRecorder, computePeaks, decodeAudio, kindOfFile, probeMedia, captureFrameBlob } from '../engine/media-import.js';
 import { h, isTyping } from './dom.js';
@@ -1291,7 +1292,20 @@ export class App {
     const status = h('p', { class: 'exp-status', role: 'status', 'aria-live': 'polite' });
     const result = h('div', { class: 'exp-result', hidden: true });
     const row = (l, c) => h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, l), c);
-    const form = h('div', { class: 'exp-form' }, row('Nome file', nameIn), row('Risoluzione', sizeSel), row('Formato', fmtSel), row('Qualità', qSel), est);
+    const sizeRow = row('Risoluzione', sizeSel);
+    const qualRow = row('Qualità', qSel);
+    const form = h('div', { class: 'exp-form' }, row('Nome file', nameIn), sizeRow, row('Formato', fmtSel), qualRow, est);
+    // altri formati: solo audio (WAV/MP3) e GIF animata, anche senza il programma desktop
+    fmtSel.append(h('optgroup', { label: 'Solo audio' }, h('option', { value: 'wav' }, 'Audio WAV (senza perdite)'), h('option', { value: 'mp3' }, 'Audio MP3 (192 kbit/s)')), h('optgroup', { label: 'Immagine animata' }, h('option', { value: 'gif' }, 'GIF animata (lato corto fino a 480 px, 12 fps)')));
+    const OTHER = ['wav', 'mp3', 'gif'];
+    const syncRows = () => {
+      const audioOnly = fmtSel.value === 'wav' || fmtSel.value === 'mp3';
+      sizeRow.hidden = audioOnly;
+      qualRow.hidden = OTHER.includes(fmtSel.value);
+      if (OTHER.includes(fmtSel.value)) est.textContent = audioOnly ? `Durata ${formatDuration(dur, 1)} · l’audio si prepara in pochi secondi, senza riproduzione in tempo reale.` : `Durata ${formatDuration(dur, 1)} · la GIF si costruisce fotogramma per fotogramma (più il video è lungo, più ci vuole). Consigliata sotto i 15 secondi.`;
+      else updateEst();
+    };
+    fmtSel.addEventListener('change', syncRows);
     let ctl;
     const secondary = h('div', { class: 'btn-row wrap' },
       h('button', { class: 'btn small', type: 'button', id: 'btn-export-png', onClick: () => this.#exportFrame(+sizeSel.value, nameIn.value) }, icon('image', 14), 'Salva fotogramma (PNG)'),
@@ -1355,7 +1369,63 @@ export class App {
       ctl.setActions([{ label: 'Chiudi', primary: true, id: 'close' }]);
       this.lastExport = { ...res, file, converted: conv ?? null };
     };
+    /** Solo audio e GIF: niente registrazione in tempo reale, si lavora a freddo. */
+    const runOther = async (kind) => {
+      form.hidden = true;
+      secondary.hidden = true;
+      progress.hidden = false;
+      progress.value = 0;
+      result.hidden = true;
+      let cancelled = false;
+      status.textContent = kind === 'gif' ? 'Costruisco la GIF…' : 'Preparo l’audio…';
+      ctl.setActions([{ label: 'Annulla', danger: true, id: 'cancel', onClick: () => { cancelled = true; return false; } }]);
+      try {
+        let blob;
+        let ext = kind;
+        if (kind === 'gif') {
+          const short = Math.min(480, +sizeSel.value);
+          const d = exportSize(p.settings, short);
+          const keep = player.time;
+          blob = await encodeGif({
+            width: d.width, height: d.height, fps: 12, duration: Math.min(dur, 60),
+            isCancelled: () => cancelled,
+            onProgress: (v) => { progress.value = v; status.textContent = `Costruisco la GIF… ${Math.round(v * 100)}%`; },
+            drawFrame: async (ctx, t) => {
+              player.seek(t);
+              await player.settle();
+              this.renderer.render(ctx, store.project, t);
+            },
+          });
+          player.seek(keep);
+        } else {
+          const mix = await renderProjectAudio(store.project, this.pool, (v) => { progress.value = v * 0.9; status.textContent = `Preparo l’audio… ${Math.round(v * 90)}%`; });
+          if (cancelled) throw Object.assign(new Error('annullata'), { cancelled: true });
+          status.textContent = kind === 'mp3' ? 'Codifico l’MP3…' : 'Scrivo il file WAV…';
+          await new Promise((r) => setTimeout(r, 20));
+          blob = kind === 'mp3' ? encodeMp3(mix.channels, mix.sampleRate, 192) : new Blob([encodeWav(mix.channels, mix.sampleRate)], { type: 'audio/wav' });
+        }
+        progress.value = 1;
+        const file = `${baseName()}.${ext}`;
+        downloadBlob(blob, file);
+        progress.hidden = true;
+        status.textContent = '';
+        clearChildren(result).append(h('p', { class: 'ok', id: 'exp-other-done' }, icon('check', 16), ` Esportazione completata: ${file}`), h('p', { class: 'hint' }, `${blob.type} · ${formatBytes(blob.size)}`), h('div', { class: 'btn-row wrap' }, h('button', { class: 'btn', type: 'button', onClick: () => downloadBlob(blob, file) }, icon('download', 14), 'Scarica di nuovo')));
+        result.hidden = false;
+        ctl.setActions([{ label: 'Chiudi', primary: true, id: 'close' }]);
+        this.lastExport = { blob, file, kind };
+      } catch (e) {
+        progress.hidden = true;
+        status.textContent = '';
+        form.hidden = false;
+        secondary.hidden = false;
+        ctl.setActions([{ label: 'Chiudi', id: 'close' }, startBtn]);
+        if (e.cancelled || /annullata/.test(e.message)) toast('Esportazione annullata');
+        else toast(`Esportazione non riuscita: ${e.message}`, { type: 'error' });
+      }
+      return false;
+    };
     const startBtn = { label: 'Avvia esportazione', primary: true, id: 'start', onClick: async () => {
+      if (OTHER.includes(fmtSel.value)) return runOther(fmtSel.value);
       form.hidden = true;
       secondary.hidden = true;
       progress.hidden = false;
