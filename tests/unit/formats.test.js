@@ -164,3 +164,16 @@ test('util: timecode, durate, byte, colori, merge', () => {
   assert.deepEqual(hexToRgb('zzz'), [0, 0, 0]);
   assert.deepEqual(mergeDeep({ a: { b: 1, c: 2 }, d: [1] }, { a: { b: 9 }, d: [2, 3], e: 1 }), { a: { b: 9, c: 2 }, d: [2, 3], e: 1 });
 });
+
+test('formatDuration non perde un secondo per errori di virgola mobile', () => {
+  assert.equal(formatDuration(1.9999999999), '0:02');
+  assert.equal(formatDuration(0.1 + 0.2 + 0.7 + 1), '0:02');
+  assert.equal(formatDuration(59.9999999), '1:00');
+});
+
+test('formatDuration con decimali riporta correttamente al minuto successivo', () => {
+  assert.equal(formatDuration(59.96, 1), '1:00.0');
+  assert.equal(formatDuration(119.99, 1), '2:00.0');
+  assert.equal(formatDuration(75.25, 1), '1:15.3');
+  assert.equal(formatDuration(0, 1), '0:00.0');
+});

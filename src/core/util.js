@@ -59,13 +59,18 @@ export function formatTimecode(t, fps = 30) {
   return (h > 0 ? `${pad(h)}:` : '') + `${pad(m)}:${pad(s)}:${pad(f)}`;
 }
 
-/** "m:ss" oppure "m:ss.d" per durate brevi. */
+/** "m:ss" oppure "m:ss.d". Arrotonda prima, poi scompone: niente "0:60" per errori di virgola mobile. */
 export function formatDuration(t, decimals = 0) {
   if (!isNum(t) || t < 0) t = 0;
-  const m = Math.floor(t / 60);
-  const s = t - m * 60;
-  const sStr = decimals > 0 ? s.toFixed(decimals).padStart(3 + decimals - 1, '0') : pad(Math.floor(s));
-  return `${m}:${sStr}`;
+  if (decimals > 0) {
+    const f = 10 ** decimals;
+    const total = Math.round(t * f) / f;
+    const m = Math.floor(total / 60);
+    const s = Math.max(0, total - m * 60);
+    return `${m}:${s.toFixed(decimals).padStart(3 + decimals, '0')}`;
+  }
+  const total = Math.floor(t + 1e-6);
+  return `${Math.floor(total / 60)}:${pad(total % 60)}`;
 }
 
 export function formatBytes(n) {

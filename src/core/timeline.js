@@ -215,13 +215,18 @@ export function addClip(p, trackId, clip, desiredStart = clip.start) {
 }
 
 /** Prima traccia sbloccata del tipo giusto con spazio libero in [start, start+duration]; altrimenti ne crea una. */
-export function trackWithRoom(p, type, start, duration, { preferId } = {}) {
-  const fits = (t) => !t.locked && t.type === type && t.clips.every((c) => clipEnd(c) <= start + TOL || c.start >= start + duration - TOL);
+/** Scostamento massimo (s) accettato per "accodare" un clip a uno spazio libero vicino invece di cambiare traccia. */
+export const SLOT_TOLERANCE = 0.12;
+
+export function trackWithRoom(p, type, start, duration, { preferId, fromTop = false } = {}) {
+  // una traccia va bene se esiste un posto libero entro SLOT_TOLERANCE dal punto richiesto
+  // (es. inserimento a 4,00 s dopo un clip che finisce a 4,01 s: si accoda, non si cambia traccia)
+  const fits = (t) => !t.locked && t.type === type && Math.abs(findFreeStart(t, start, duration) - start) <= SLOT_TOLERANCE;
   const pref = preferId ? getTrack(p, preferId) : null;
   if (pref && fits(pref)) return pref;
-  // tracce visive: scorre dal basso verso l'alto (la principale è quella più in basso fra le visive)
+  // tracce visive: di norma dal basso (la principale); con fromTop dall'alto (testi, adesivi, livelli)
   const candidates = p.tracks.filter((t) => t.type === type);
-  const ordered = type === 'video' ? [...candidates].reverse() : candidates;
+  const ordered = type === 'video' && !fromTop ? [...candidates].reverse() : candidates;
   return ordered.find(fits) ?? addTrack(p, type);
 }
 

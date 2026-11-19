@@ -360,3 +360,17 @@ test('addMediaClip crea una traccia nuova se la prima è occupata solo su quella
   assert.ok(p.tracks[0].clips.includes(clip));
   assert.ok(audioTrackId(p));
 });
+
+test('addMediaClip accoda sulla stessa traccia se lo scostamento è minimo, altrimenti cambia traccia', async () => {
+  const { SLOT_TOLERANCE } = await import('../../src/core/timeline.js');
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  put(p, t, 'v1', 0);                                    // 0-10
+  const near = addMediaClip(p, p.media.v2, { start: 9.95 }); // sovrapposto di 50 ms → si accoda a 10
+  assert.equal(p.tracks.find((x) => x.clips.includes(near)).id, t);
+  assert.ok(Math.abs(near.start - 10) < 1e-9);
+  const far = addMediaClip(p, p.media.v2, { start: 12 });    // occupato per intero → altra traccia
+  assert.notEqual(p.tracks.find((x) => x.clips.includes(far)).id, t);
+  assert.ok(SLOT_TOLERANCE > 0 && SLOT_TOLERANCE < 0.5);
+  mustBeValid(p);
+});
