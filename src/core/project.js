@@ -10,6 +10,7 @@
 import { clamp, isNum, mergeDeep, uid } from './util.js';
 import { MAX_SPEED, MIN_SPEED } from './presets.js';
 import { defaultGrade, sanitizeGrade, sanitizeLuts } from './grade.js';
+import { defaultKaraoke, sanitizeKaraoke, sanitizeWords } from './karaoke.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -63,6 +64,8 @@ export function defaultText() {
     stroke: { width: 0, color: '#000000' },
     shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0.5 },
     bg: { enabled: false, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 },
+    karaoke: defaultKaraoke(),
+    words: null,
   };
 }
 
@@ -190,6 +193,10 @@ export function sanitizeClip(raw, p) {
     else delete clip.keyframes[prop];
   }
   clip.grade = sanitizeGrade(raw.grade);
+  if (clip.kind === 'text') {
+    clip.text.karaoke = sanitizeKaraoke(raw.text?.karaoke);
+    clip.text.words = sanitizeWords(raw.text?.words);
+  }
   if (!Array.isArray(clip.effects)) clip.effects = [];
   clip.effects = clip.effects.filter((e) => e && typeof e.type === 'string').map((e) => ({ id: e.id ?? uid('e'), type: e.type, amount: num(e.amount, 50, 0, 100) }));
   return clip;

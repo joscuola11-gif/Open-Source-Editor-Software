@@ -316,3 +316,47 @@ test('sottotitoli: «Taglia» toglie la frase dal video e da tutte le tracce e c
     assert.equal((await subs(page)).length, 3);
   });
 });
+
+test('karaoke: il colore di evidenza avanza sul testo durante il clip; si regola dal pannello', async () => {
+  await withApp(async ({ page }) => {
+    await openTab(page, 'text');
+    await page.click('#btn-add-text');
+    await page.waitForSelector('.clip.kind-text');
+    await page.evaluate(() => {
+      const id = window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].id;
+      window.__ciak.store.commit('prova', (p) => {
+        const c = p.tracks.flatMap((t) => t.clips).find((x) => x.id === id);
+        c.text.content = 'UNO DUE TRE QUATTRO';
+        c.text.size = 10;
+        c.text.color = '#ffffff';
+        c.text.karaoke = { enabled: true, mode: 'fill', color: '#ff0000' };
+      });
+    });
+    const red = async (t) => {
+      await seek(page, t);
+      return page.evaluate(() => {
+        const c = window.__ciak.preview.canvas;
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 60 && d[i + 2] < 60) n++;
+        return n;
+      });
+    };
+    const r0 = await red(0.05);
+    const r1 = await red(1.2);
+    const r2 = await red(2.6);
+    assert.ok(r0 < 50, `all'inizio quasi niente è colorato (${r0})`);
+    assert.ok(r1 > r0 + 200, `a metà parte del testo è colorata (${r1})`);
+    assert.ok(r2 > r1 * 1.4, `verso la fine ne è colorato di più (${r1} → ${r2})`);
+    // spento: niente rosso
+    await page.evaluate(() => {
+      const id = window.__ciak.store.project.tracks.flatMap((t) => t.clips)[0].id;
+      window.__ciak.store.commit('prova', (p) => { p.tracks.flatMap((t) => t.clips).find((x) => x.id === id).text.karaoke.enabled = false; });
+    });
+    assert.ok((await red(2.6)) < 50, 'karaoke spento');
+    // dal pannello
+    await page.locator('.clip.kind-text').first().click();
+    await page.locator('details.section summary', { hasText: 'Karaoke' }).click();
+    assert.ok(await page.getByText('Colora le parole mentre si dicono').isVisible());
+  });
+});

@@ -16,6 +16,7 @@ import { clipAnimationState } from '../core/animations.js';
 import { BLEND_MODES, FILTERS } from '../core/presets.js';
 import { isActiveAt } from '../core/timeline.js';
 import { applyGrade, decodeLut, gradeIsIdentity } from '../core/grade.js';
+import { karaokeFraction, prefixLength } from '../core/karaoke.js';
 import { IDENTITY_PARAMS, applyFilterParams, chromaKey, fillNoise, filterCss, glitchSlices, isIdentityParams, rgbSplit } from './pixel-fx.js';
 
 const BLEND_OP = Object.fromEntries(BLEND_MODES.map((b) => [b.id, b.op]));
@@ -322,7 +323,7 @@ export class Renderer {
     } else if (clip.kind === 'adjustment') {
       const snap = this.#snapshot(ctx, W, H);
       bitmap = { img: snap, sw: W, sh: H };
-    } else if (clip.kind === 'text') procedural = (c) => this.#drawText(c, clip, box.layout, an.chars, scale, H);
+    } else if (clip.kind === 'text') procedural = (c) => this.#drawText(c, clip, box.layout, an.chars, scale, H, clip.text.karaoke?.enabled ? karaokeFraction(clip.text, t - clip.start, clip.duration) : 0);
     else if (clip.kind === 'shape') procedural = (c) => this.#drawShape(c, clip, box, W, H);
     else if (clip.kind === 'sticker') procedural = (c) => this.#drawSticker(c, clip, H);
 
@@ -878,7 +879,7 @@ export class Renderer {
     return layout;
   }
 
-  #drawText(c, clip, L, chars, scale, H) {
+  #drawText(c, clip, L, chars, scale, H, karaoke = 0) {
     const tx = clip.text;
     if (tx.bg.enabled) {
       c.fillStyle = rgba(tx.bg.color, tx.bg.opacity);
@@ -895,6 +896,8 @@ export class Renderer {
     const ax = tx.align === 'left' ? -L.textW / 2 : tx.align === 'right' ? L.textW / 2 : 0;
     const total = L.lines.reduce((s, l) => s + l.length, 0);
     let budget = chars >= 1 ? Infinity : Math.floor(chars * total + 1e-6);
+    const kTotal = karaoke > 0 ? L.lines.reduce((s, l) => s + l.replace(/\s+/g, '').length, 0) : 0;
+    let kLeft = Math.floor(karaoke * kTotal + 1e-6);
     const sw = tx.stroke.width * L.fs;
     const unit = H / 1080;
     for (let i = 0; i < L.lines.length; i++) {
@@ -918,6 +921,20 @@ export class Renderer {
       }
       c.fillStyle = tx.color;
       c.fillText(line, ax, y);
+      // karaoke: le lettere già «cantate» si ridisegnano nel colore di evidenza, partendo dall'inizio della riga
+      if (kLeft > 0) {
+        const lw = L.widths[i];
+        const inLine = Math.min(kLeft, line.replace(/\s+/g, '').length);
+        kLeft -= inLine;
+        const part = line.slice(0, prefixLength(line, inLine));
+        if (part) {
+          const x0 = tx.align === 'left' ? ax : tx.align === 'right' ? ax - lw : ax - lw / 2;
+          c.textAlign = 'left';
+          c.fillStyle = tx.karaoke.color;
+          c.fillText(part, x0, y);
+          c.textAlign = tx.align === 'left' ? 'left' : tx.align === 'right' ? 'right' : 'center';
+        }
+      }
       c.shadowColor = 'transparent';
       c.shadowBlur = 0;
       c.shadowOffsetX = 0;

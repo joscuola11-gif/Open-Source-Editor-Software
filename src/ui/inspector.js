@@ -12,6 +12,7 @@ import { ANIMATIONS, ENTER_EXIT_IDS, TRANSITION_IDS } from '../core/animations.j
 import { EASING_LABELS, KEYFRAME_PROPS, removeKeyframeAt, setValueAt, valueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
+import { KARAOKE_MODES } from '../core/karaoke.js';
 
 const TABS = {
   video: [['video', 'Video'], ['audio', 'Audio'], ['speed', 'Velocità'], ['anim', 'Animazione'], ['adjust', 'Regolazione'], ['fx', 'Effetti']],
@@ -559,6 +560,12 @@ export class Inspector {
         this.S({ label: 'Opacità', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.text.bg.opacity * 100, set: (c, v) => { c.text.bg.opacity = v / 100; }, def: 60, history: 'Sfondo testo' }),
         this.S({ label: 'Margine interno', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.text.bg.padding * 100, set: (c, v) => { c.text.bg.padding = v / 100; }, def: 30, history: 'Sfondo testo' }),
         this.S({ label: 'Arrotondamento', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.text.bg.radius * 100, set: (c, v) => { c.text.bg.radius = v / 100; }, def: 20, history: 'Sfondo testo' }),
+      ], { open: false }),
+      section('Karaoke', [
+        this.#add(toggleControl(this.ctx, { label: 'Colora le parole mentre si dicono', get: (c) => c.text.karaoke.enabled, set: (c, v) => { c.text.karaoke.enabled = v; }, history: 'Karaoke' })),
+        this.#add(selectControl(this.ctx, { label: 'Modo', options: KARAOKE_MODES, get: (c) => c.text.karaoke.mode, set: (c, v) => { c.text.karaoke.mode = v; }, history: 'Karaoke' })),
+        this.#add(colorPicker(this.ctx, { label: 'Colore di evidenza', get: (c) => c.text.karaoke.color, set: (c, v) => { c.text.karaoke.color = v; }, history: 'Karaoke' })),
+        h('p', { class: 'hint' }, 'Le parole si colorano una dopo l’altra su tutta la durata del clip. Con sottotitoli importati da LRC esteso o ASS con \\k si usano i tempi esatti del file.'),
       ], { open: false }),
     ];
   }
