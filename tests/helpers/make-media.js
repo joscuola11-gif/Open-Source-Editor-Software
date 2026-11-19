@@ -53,6 +53,11 @@ export function makeMedia() {
     run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=1.5', '-f', 'lavfi', '-i', 'smptebars=size=320x180:rate=30:duration=2', '-f', 'lavfi', '-i', 'rgbtestsrc=size=320x180:rate=30:duration=1', '-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=30:duration=2.5',
       '-filter_complex', '[0:v][1:v][2:v][3:v]concat=n=4:v=1:a=0[v]', '-map', '[v]', ...vp8, '-an', f('scenes.webm')]);
   }
+  // un quadrato rosso (80 px) che attraversa un fondo grigio su e giù, 6 s: serve all'inquadratura automatica
+  if (!existsSync(f('mover.webm'))) {
+    run(['-f', 'lavfi', '-i', 'color=c=0x5a5a5a:s=640x360:r=30:d=6', '-f', 'lavfi', '-i', 'color=c=0xe02828:s=80x80:r=30:d=6',
+      '-filter_complex', "[0:v][1:v]overlay=x='(W-w)*(0.12+0.76*(0.5-0.5*cos(t*0.9)))':y='(H-h)*(0.5+0.3*sin(t*1.1))'[v]", '-map', '[v]', ...vp8, '-an', f('mover.webm')]);
+  }
   // 30 s: fermo, movimento intenso fra 10 e 15 s, fermo; audio forte solo fra 20 e 25 s
   if (!existsSync(f('hl.webm'))) {
     run(['-f', 'lavfi', '-i', 'color=c=0x606060:s=320x180:r=30:d=10', '-f', 'lavfi', '-i', 'nullsrc=s=320x180:r=30:d=5,geq=random(1)*255:128:128', '-f', 'lavfi', '-i', 'color=c=0x606060:s=320x180:r=30:d=15',

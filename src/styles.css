@@ -2534,3 +2534,13 @@ input[type='range'] {
   height: 100%;
   background: var(--accent);
 }
+
+/* ---- scelta di un punto nell'anteprima (inseguimento) ---- */
+.stage-box.picking,
+.stage-box.picking * {
+  cursor: crosshair !important;
+}
+.stage-box.picking {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}

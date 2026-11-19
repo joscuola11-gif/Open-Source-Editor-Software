@@ -331,13 +331,28 @@ export class Inspector {
         h('p', { class: 'hint' }, 'Quando un video orizzontale va in un formato verticale (o il contrario) i lati non restano neri: si vede la stessa immagine ingrandita e sfocata.'),
       ], { open: clip.backdrop.mode !== 'none' }));
     }
+    if (!['video', 'audio', 'adjustment'].includes(clip.kind)) {
+      const under = allClips(this.app.store.project).filter((c) => c.kind === 'video' && c.id !== clip.id && c.start < clip.start + clip.duration && c.start + c.duration > clip.start);
+      if (under.length) {
+        const sel = h('select', { id: 'track-video', 'aria-label': 'Video da seguire' }, under.map((c) => h('option', { value: c.id }, `${c.name || 'Video'} (${formatDuration(c.start, 1)})`)));
+        out.push(section('Segui un oggetto del video', [
+          h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Video'), sel),
+          h('div', { class: 'btn-row wrap' }, actionButton({ label: 'Scegli il punto da seguire', icon: 'target', id: 'btn-track-pick', title: 'Poi clicca nell’anteprima l’oggetto che deve seguire', onClick: () => actions.pickTrackPoint(clip.id, sel.value) })),
+          h('p', { class: 'hint' }, 'Metti la testina dove si vede il punto, premi il pulsante e clicca l’oggetto nell’anteprima: l’elemento lo seguirà per tutta la sua durata. Scegli un punto con dettagli (non un cielo liscio). Non segue ingrandimenti e rotazioni dell’oggetto.'),
+        ], { open: false }));
+      }
+    }
     if (clip.kind === 'video') {
+      const reframeZoom = h('input', { type: 'range', id: 'reframe-zoom', min: 100, max: 200, step: 5, value: 100, 'aria-label': 'Zoom aggiuntivo per l’inquadratura automatica' });
       const sens = h('input', { type: 'range', id: 'scene-sens', min: 0, max: 100, step: 5, value: 50, 'aria-label': 'Sensibilità del rilevamento' });
       out.push(section('Analisi del video', [
         h('div', { class: 'ctl' }, h('label', { class: 'ctl-label', for: 'scene-sens' }, 'Sensibilità'), sens),
         h('div', { class: 'btn-row wrap' },
           actionButton({ label: 'Dividi per scene', icon: 'scissors', id: 'btn-split-scenes', title: 'Trova i cambi di scena (tagli e dissolvenze) e divide il clip lì', onClick: () => actions.splitScenes({ clipId: clip.id, sensitivity: Number(sens.value) / 100 }) }),
           actionButton({ label: 'Momenti migliori…', icon: 'sparkles', id: 'btn-highlights', title: 'Trova i tratti più vivaci per ricavare un riassunto', onClick: () => actions.openHighlights() })),
+        h('div', { class: 'ctl' }, h('label', { class: 'ctl-label', for: 'reframe-zoom' }, 'Zoom in più'), reframeZoom),
+        h('div', { class: 'btn-row wrap' },
+          actionButton({ label: 'Inquadra il soggetto', icon: 'crop', id: 'btn-reframe', title: 'Riempie il formato del progetto e muove l’inquadratura per tenere dentro ciò che si muove (keyframe di scala e posizione)', onClick: () => actions.autoReframe({ clipId: clip.id, zoom: Number(reframeZoom.value) / 100 }) })),
         h('p', { class: 'hint' }, 'Le analisi guardano fotogrammi piccoli del video: su un video lungo possono richiedere un po’. Le dissolvenze lente vengono trovate; le animazioni dentro un’unica ripresa non contano come cambio di scena.'),
       ], { open: false }));
     }

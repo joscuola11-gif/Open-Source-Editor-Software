@@ -232,6 +232,39 @@ export class PreviewView {
     return null;
   }
 
+  /**
+   * Il prossimo clic sull'anteprima non seleziona nulla: dà il punto cliccato (in pixel del canvas del progetto) a `cb`.
+   * Esc o un clic fuori annullano.
+   */
+  pickPoint(cb) {
+    this.cancelPick();
+    this.pickCb = cb;
+    this.box.classList.add('picking');
+    this.pickKey = (ev) => { if (ev.key === 'Escape') this.cancelPick(); };
+    // in fase di cattura: il riquadro di selezione del clip (che sta sopra l'anteprima) non deve rubare il clic
+    this.pickDown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const done = this.pickCb;
+      this.cancelPick();
+      const r = this.canvas.getBoundingClientRect();
+      const { width, height } = this.app.store.project.settings;
+      done?.({ px: ((e.clientX - r.left) / r.width) * width, py: ((e.clientY - r.top) / r.height) * height });
+    };
+    window.addEventListener('keydown', this.pickKey, true);
+    this.box.addEventListener('pointerdown', this.pickDown, true);
+  }
+
+  cancelPick() {
+    this.pickCb = null;
+    this.box.classList.remove('picking');
+    if (this.pickKey) window.removeEventListener('keydown', this.pickKey, true);
+    if (this.pickDown) this.box.removeEventListener('pointerdown', this.pickDown, true);
+    this.pickKey = null;
+    this.pickDown = null;
+  }
+
   #onBoxDown(e) {
     if (e.button !== 0 || e.target.closest('.sel-handle')) return;
     const hit = this.#hit(e.clientX, e.clientY);

@@ -37,6 +37,9 @@ import { analyze, autoAdjust, matchColors } from '../core/autocolor.js';
 import { sampleClipFrames } from '../engine/frame-sampler.js';
 import { sampleVideoFrames } from '../engine/video-analysis.js';
 import { bestBoundary, detectScenes } from '../core/scenes.js';
+import { planCamera, reframeKeyframes, subjectCenters } from '../core/reframe.js';
+import { toGray, trackPoint } from '../core/tracker.js';
+import { canvasToSource, followKeyframes, sourceToCanvas } from '../core/trackmap.js';
 import { applyTemplate, parseTemplateFile, serializeTemplate, templateFromProject } from '../core/templates.js';
 import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
@@ -1385,6 +1388,110 @@ export class App {
         } finally {
           working.remove();
         }
+      },
+      /**
+       * Inquadratura automatica: ingrandisce il video quanto serve per riempire il formato del progetto e muove l'inquadratura
+       * (keyframe di scala e posizione) per tenere dentro il soggetto in movimento.
+       */
+      async autoReframe({ clipId, zoom = 1 } = {}) {
+        const f = findClip(app.store.project, clipId ?? app.inspector.clipId);
+        if (!f || f.clip.kind !== 'video') return toast('Seleziona un clip video', { type: 'warn' });
+        const clip = f.clip;
+        const c = clip.crop;
+        if (c.l + c.t + c.r + c.b > 0.001) return toast('Azzera prima il ritaglio del clip: l’inquadratura automatica lavora sul video intero.', { type: 'warn' });
+        const media = app.store.project.media[clip.mediaId];
+        const { width: W, height: H } = app.store.project.settings;
+        const srcAspect = (media?.width || 16) / (media?.height || 9);
+        const canvasAspect = W / H;
+        if (Math.abs(srcAspect - canvasAspect) < 0.02 && zoom <= 1.001) return toast('Il video ha già le proporzioni del formato: aumenta lo zoom per far seguire il soggetto.', { type: 'info' });
+        const blob = app.pool.blob(clip.mediaId);
+        if (!blob) return toast('File non disponibile', { type: 'warn' });
+        const working = toast('Cerco il soggetto…', { ms: 600000 });
+        const label = working.querySelector('.toast-msg');
+        try {
+          const fps = 4;
+          const frames = await sampleVideoFrames(blob, { from: clip.in, to: clip.in + clip.duration * clip.speed, fps, onProgress: (v) => { label.textContent = `Cerco il soggetto… ${Math.round(v * 100)}%`; } });
+          if (frames.length < 2) throw new Error('Il clip è troppo breve.');
+          const centers = subjectCenters(frames);
+          const vis = reframeKeyframes([{ t: 0, x: 0.5, y: 0.5 }], { srcAspect, canvasAspect, zoom }).visible;
+          const camX = planCamera(centers.map((p) => p.x), { fps, visible: vis.x });
+          const camY = planCamera(centers.map((p) => p.y), { fps, visible: vis.y });
+          const path = frames.map((fr, i) => ({ t: (fr.t - clip.in) / clip.speed, x: camX[i], y: camY[i] }));
+          const rk = reframeKeyframes(path, { srcAspect, canvasAspect, zoom });
+          const r = app.commit('Inquadratura automatica', (d) => {
+            const q = findClip(d, clip.id).clip;
+            q.keyframes = { ...q.keyframes, scale: rk.keyframes.scale, x: rk.keyframes.x, y: rk.keyframes.y };
+          });
+          if (r.ok) toast('Inquadratura automatica applicata: il soggetto resta in vista (keyframe modificabili).', { type: 'success' });
+          return r;
+        } catch (e) {
+          toast(`Non riesco a inquadrare: ${e.message}`, { type: 'warn' });
+        } finally {
+          working.remove();
+        }
+      },
+      /**
+       * Inseguimento: un testo/adesivo/immagine segue un punto di un video. (px, py) = il punto nel canvas del progetto (pixel),
+       * alla posizione della testina. Aggiunge keyframe di posizione X e Y all'elemento.
+       */
+      async trackObject({ overlayId, videoId, px, py }) {
+        const p0 = app.store.project;
+        const o = findClip(p0, overlayId)?.clip;
+        const v = findClip(p0, videoId)?.clip;
+        if (!o || !v || v.kind !== 'video') return toast('Scegli l’elemento da muovere e il video da seguire', { type: 'warn' });
+        const t0 = app.player.time;
+        if (t0 < o.start || t0 >= clipEnd(o) || t0 < v.start || t0 >= clipEnd(v)) return toast('Metti la testina su un punto dove si vedono sia l’elemento sia il video.', { type: 'warn' });
+        const { width: W, height: H } = p0.settings;
+        const opt = { crop: v.crop, flipX: !!v.transform.flipX, flipY: !!v.transform.flipY };
+        const g0 = app.renderer.geometry(p0, v, t0, W, H);
+        if (!g0) return toast('Il video non è visibile qui', { type: 'warn' });
+        const { u, v: vv } = canvasToSource(g0, px, py, opt);
+        if (u < 0.02 || u > 0.98 || vv < 0.02 || vv > 0.98) return toast('Il punto scelto è fuori dal video o troppo vicino al bordo.', { type: 'warn' });
+        const blob = app.pool.blob(v.mediaId);
+        if (!blob) return toast('File non disponibile', { type: 'warn' });
+        const working = toast('Seguo il punto…', { ms: 600000 });
+        const label = working.querySelector('.toast-msg');
+        try {
+          const tStart = Math.max(o.start, v.start);
+          const tEnd = Math.min(clipEnd(o), clipEnd(v));
+          const srcOf = (t) => v.in + (t - v.start) * v.speed;
+          const fpsSrc = clamp(24 * v.speed, 2, 48);
+          const frames = await sampleVideoFrames(blob, { from: srcOf(tStart), to: srcOf(tEnd), fps: fpsSrc, maxSide: 192, onProgress: (x) => { label.textContent = `Seguo il punto… ${Math.round(x * 100)}%`; } });
+          if (frames.length < 2) throw new Error('Il tratto è troppo breve.');
+          const times = frames.map((fr) => v.start + (fr.t - v.in) / v.speed);
+          let k0 = 0;
+          times.forEach((t, i) => { if (Math.abs(t - t0) < Math.abs(times[k0] - t0)) k0 = i; });
+          const grays = frames.map(toGray);
+          const { w, h } = grays[0];
+          const start = { x: u * w, y: vv * h };
+          const o2 = { radius: Math.max(5, Math.round(0.045 * w)), search: Math.round(0.14 * w) };
+          const fwd = trackPoint(grays.slice(k0), start, o2);
+          const bwd = k0 > 0 ? trackPoint(grays.slice(0, k0 + 1).reverse(), start, o2).reverse() : [fwd[0]];
+          const track = [...bwd.slice(0, -1), ...fwd];
+          const lost = track.filter((q) => q.lost).length / track.length;
+          const points = track.map((q, i) => {
+            const g = app.renderer.geometry(p0, v, times[i], W, H);
+            const c = sourceToCanvas(g, q.x / w, q.y / h, opt);
+            return { t: times[i] - o.start, x: c.x, y: c.y };
+          });
+          const local0 = t0 - o.start;
+          const kf = followKeyframes(points, { W, H, anchor: k0, base: { x: valueAt(o, 'x', local0), y: valueAt(o, 'y', local0) } });
+          const r = app.commit('Inseguimento', (d) => {
+            const q = findClip(d, o.id).clip;
+            q.keyframes = { ...q.keyframes, x: kf.x, y: kf.y };
+          });
+          if (r.ok) toast(lost > 0.02 ? `Segue il punto, ma in alcuni tratti (${Math.round(lost * 100)}%) l’ho perso: lì resta fermo. Prova un punto con più dettagli.` : 'Fatto: l’elemento segue il punto (keyframe di posizione modificabili).', { type: lost > 0.02 ? 'warn' : 'success' });
+          return { ...r, lost };
+        } catch (e) {
+          toast(`Inseguimento non riuscito: ${e.message}`, { type: 'warn' });
+        } finally {
+          working.remove();
+        }
+      },
+      /** Chiede di cliccare nell'anteprima il punto da seguire, poi avvia l'inseguimento. */
+      pickTrackPoint(overlayId, videoId) {
+        toast('Clicca nell’anteprima il punto da seguire (Esc per annullare).', { type: 'info', ms: 6000 });
+        app.preview.pickPoint(({ px, py }) => A.trackObject({ overlayId, videoId, px, py }));
       },
       /** Finestra «Momenti migliori»: trova i tratti più vivaci del clip video selezionato. */
       openHighlights() {

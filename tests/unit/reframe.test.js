@@ -62,7 +62,7 @@ test('camera virtuale: ferma finché il soggetto sta nella zona morta, poi lo se
   for (let i = 0; i < 12; i++) assert.ok(Math.abs(cam[i] - cam[0]) < 0.02, 'fermo quando il soggetto sta nella zona morta');
   let maxStep = 0;
   for (let i = 1; i < cam.length; i++) maxStep = Math.max(maxStep, Math.abs(cam[i] - cam[i - 1]));
-  assert.ok(maxStep <= 0.35 / fps + 1e-6, `velocità limitata (${maxStep})`);
+  assert.ok(maxStep <= 0.7 / fps + 1e-6, `velocità limitata (${maxStep})`);
   for (let i = 0; i < cam.length; i++) {
     assert.ok(cam[i] >= vis / 2 - 1e-9 && cam[i] <= 1 - vis / 2 + 1e-9, 'dentro il video');
     if (i > 8) assert.ok(Math.abs(subject[i] - cam[i]) < vis / 2, `il soggetto resta nell’inquadratura (frame ${i}: ${subject[i].toFixed(2)} vs ${cam[i].toFixed(2)})`);
@@ -70,7 +70,7 @@ test('camera virtuale: ferma finché il soggetto sta nella zona morta, poi lo se
   // accelerazione dolce: la velocità non cambia di colpo
   let maxJerk = 0;
   for (let i = 2; i < cam.length; i++) maxJerk = Math.max(maxJerk, Math.abs(cam[i] - 2 * cam[i - 1] + cam[i - 2]));
-  assert.ok(maxJerk <= (0.8 / fps / fps) * 1.05 + 1e-9, `accelerazione ${maxJerk}`);
+  assert.ok(maxJerk <= (2.5 / fps / fps) * 1.05 + 1e-9, `accelerazione ${maxJerk}`);
   // tutto visibile: la camera sta al centro
   assert.deepEqual(planCamera([0.1, 0.9], { fps, visible: 1 }), [0.5, 0.5]);
   assert.deepEqual(planCamera([], { fps, visible: 0.5 }), []);

@@ -6,7 +6,7 @@ import { Store } from '../../src/core/store.js';
 import {
   addMarker, addMediaClip, addTrack, copyClips, deleteClips, duplicateClips, insertFreezeFrame, moveClips, moveTrack,
   pasteClips, planMove, removeTrack, rippleDelete, setSpeed, setTransition, splitClip, trimClip, trimToTime, cutRange, validateProject, allClips,
-  clipEnd, applySpeedRamp,
+  clipEnd, applySpeedRamp, splitClipAtTimes, keepOnly,
 } from '../../src/core/timeline.js';
 import { upsertKeyframe } from '../../src/core/keyframes.js';
 import { RAMP_PRESETS } from '../../src/core/speedramp.js';
@@ -92,6 +92,17 @@ function runFuzz(seed, steps) {
       const len = r() < 0.2 ? 0.01 : r() * 6;
       const only = r() < 0.3 && store.project.tracks.length ? [pick(store.project.tracks).id] : null;
       return store.commit('cut', (p) => cutRange(p, a, a + len, { trackIds: only }));
+    },
+    splitMany: () => {
+      const c = randomClip();
+      if (!c) return { ok: true, skipped: true };
+      const times = Array.from({ length: 1 + Math.floor(r() * 4) }, () => c.start + (r() < 0.15 ? 0.01 : r()) * c.duration);
+      return store.commit('splitMany', (p) => splitClipAtTimes(p, c.id, times));
+    },
+    keep: () => {
+      const ranges = Array.from({ length: 1 + Math.floor(r() * 3) }, () => { const a = time(); return { start: a, end: a + 0.05 + r() * 5 }; });
+      const only = r() < 0.3 && store.project.tracks.length ? [pick(store.project.tracks).id] : null;
+      return store.commit('keep', (p) => keepOnly(p, ranges, { trackIds: only }));
     },
     del: () => store.commit('del', (p) => deleteClips(p, randomSel())),
     ripple: () => store.commit('ripple', (p) => rippleDelete(p, randomSel())),

@@ -107,7 +107,7 @@ function medianFilter(xs, k = 5) {
  *   `maxSpeed` = larghezze del video al secondo; `accel` = larghezze/s²
  * @returns {number[]} centro della finestra (0..1) per fotogramma, sempre dentro il video
  */
-export function planCamera(subject, { fps, visible, deadZone = 0.3, maxSpeed = 0.35, accel = 0.8 }) {
+export function planCamera(subject, { fps, visible, deadZone = 0.3, maxSpeed = 0.7, accel = 2.5 }) {
   if (!subject.length) return [];
   const lo = visible / 2;
   const hi = 1 - visible / 2;
@@ -123,8 +123,14 @@ export function planCamera(subject, { fps, visible, deadZone = 0.3, maxSpeed = 0
     let want = 0;
     if (d > half) want = d - half;
     else if (d < -half) want = d + half;
-    // velocità voluta: si recupera lo scarto in ~0,6 s, entro il limite
-    let vt = clamp(want / 0.6, -maxSpeed, maxSpeed);
+    // velocità voluta: quella del soggetto (stimata su ±2 fotogrammi) più il recupero dello scarto in ~0,35 s, entro il limite
+    let vt = 0;
+    if (want !== 0) {
+      const a = Math.max(0, i - 2);
+      const b = Math.min(s.length - 1, i + 2);
+      const subjectV = (s[b] - s[a]) / ((b - a) * dt);
+      vt = clamp(subjectV + want / 0.35, -maxSpeed, maxSpeed);
+    }
     const dv = clamp(vt - v, -accel * dt, accel * dt);
     v += dv;
     c = clamp(c + v * dt, lo, hi);
