@@ -327,3 +327,53 @@ test('marcatori e calamita da tastiera', async () => {
     await page.waitForFunction(() => window.__ciak.store.project.markers.length === 0);
   });
 });
+
+test('cache dell\'aspetto statico: stesso risultato del percorso diretto e invalidata alle modifiche', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('photo.png')]);
+    await addMedia(page, 0);
+    const r = await page.evaluate(async () => {
+      const a = window.__ciak;
+      const find = () => a.store.project.tracks.flatMap((t) => t.clips)[0];
+      a.store.commit('fx', (d) => {
+        const c = d.tracks.flatMap((t) => t.clips)[0];
+        c.filter = { id: 'cinema', intensity: 1 };
+        c.adjust.blur = 10;
+        c.effects.push({ id: 'p', type: 'pixelate', amount: 30 });
+        c.effects.push({ id: 'r', type: 'rgb-split', amount: 40 });
+      });
+      const cv = document.createElement('canvas');
+      cv.width = 640; cv.height = 360;
+      const g = cv.getContext('2d', { willReadFrequently: true });
+      const grab = () => { a.renderer.render(g, a.store.project, 1); return g.getImageData(0, 0, 640, 360).data.slice(); };
+      const diff = (x, y) => { let s = 0; for (let i = 0; i < x.length; i++) s += Math.abs(x[i] - y[i]); return s / x.length; };
+      a.renderer.lookHits = 0; a.renderer.lookBuilds = 0;
+      const f1 = grab();          // 1° fotogramma: percorso diretto
+      const f2 = grab();          // 2°: stabile → costruisce la cache
+      const f3 = grab();          // 3°: cache
+      const f4 = grab();
+      const out = { d12: diff(f1, f2), d13: diff(f1, f3), d14: diff(f1, f4), hits: a.renderer.lookHits, builds: a.renderer.lookBuilds };
+      // modifica del filtro: la cache deve essere invalidata (colore → grigio)
+      a.store.commit('noir', (d) => { d.tracks.flatMap((t) => t.clips)[0].filter = { id: 'noir', intensity: 1 }; });
+      grab(); grab();
+      const f5 = grab();
+      let maxChroma = 0;
+      for (let i = 0; i < f5.length; i += 4) maxChroma = Math.max(maxChroma, Math.max(f5[i], f5[i + 1], f5[i + 2]) - Math.min(f5[i], f5[i + 1], f5[i + 2]));
+      out.noirDiffFromBefore = diff(f1, f5);
+      out.maxChromaAfterNoir = maxChroma;
+      // modifica della scala: la cache deve seguire la nuova dimensione
+      a.store.commit('scale', (d) => { d.tracks.flatMap((t) => t.clips)[0].transform.scale = 0.5; });
+      grab(); grab();
+      const f6 = grab();
+      const corner = (f6[0] + f6[1] + f6[2]);
+      out.cornerAfterScale = corner;
+      void find;
+      return out;
+    });
+    assert.ok(r.d12 < 0.8 && r.d13 < 0.8 && r.d14 < 0.8, `cache ≈ percorso diretto (differenza media ${r.d12.toFixed(3)}/${r.d13.toFixed(3)}/${r.d14.toFixed(3)})`);
+    assert.ok(r.hits >= 2 && r.builds >= 1, `la cache è stata usata (hit ${r.hits}, build ${r.builds})`);
+    assert.ok(r.noirDiffFromBefore > 5, 'cambiando filtro il risultato cambia (cache invalidata)');
+    assert.ok(r.maxChromaAfterNoir <= 4, `dopo «Noir» tutto è grigio (croma massima ${r.maxChromaAfterNoir})`);
+    assert.equal(r.cornerAfterScale, 0, 'dopo aver ridotto la scala l\'angolo è vuoto (nessun frame obsoleto)');
+  });
+});

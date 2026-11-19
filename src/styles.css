@@ -95,7 +95,9 @@ kbd {
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr); /* senza questo la colonna implicita si allarga al contenuto della timeline */
-  grid-template-rows: 48px minmax(0, 1fr) 6px var(--tl-h, 330px);
+  /* la timeline non supera il 46% dell'altezza: su finestre basse l'anteprima resta visibile */
+  grid-template-rows: 48px minmax(0, 1fr) 6px min(var(--tl-h, 330px), 46vh);
+  grid-template-rows: 48px minmax(0, 1fr) 6px min(var(--tl-h, 330px), 46dvh);
   height: 100vh;
   height: 100dvh;
 }
@@ -814,17 +816,16 @@ input[type='range'] {
 }
 .insp-tabs {
   display: flex;
-  gap: 2px;
+  flex-wrap: wrap; /* niente scorrimento orizzontale: nessuna scheda resta nascosta */
+  gap: 0 2px;
   padding: 6px 10px 0;
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 .insp-tabs .tab {
   border: 0;
   background: transparent;
   color: var(--text-dim);
-  padding: 7px 9px;
+  padding: 6px 8px;
   border-bottom: 2px solid transparent;
   white-space: nowrap;
 }

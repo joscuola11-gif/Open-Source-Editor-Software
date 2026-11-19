@@ -121,6 +121,11 @@ export class Renderer {
   #noise = null;
   #textCache = new Map();
   #warned = new Set();
+  #lookKeys = new Map(); // clipId → chiave dell'ultimo fotogramma (per rilevare i parametri stabili)
+  #looks = new Map(); // clipId → {key, canvas}: aspetto statico già elaborato (LRU)
+  #glow = null;
+  lookHits = 0; // contatori per test/diagnostica
+  lookBuilds = 0;
   supportsFilter;
   supportsLetterSpacing;
 
@@ -329,9 +334,39 @@ export class Renderer {
     // --- contenuto pronto (eventuale fase pixel) ----------------------------------
     let drawImage = null; // (c, dx, dy, dw, dh) disegna il bitmap (già elaborato) nel riquadro
     if (bitmap) {
-      const staged = chroma || pixelFx.length || needSoftFilter ? this.#pixelStage(bitmap, box, scale, clip, chroma, pixelFx, needSoftFilter ? fp : null, t, fps, frame) : null;
-      if (staged) drawImage = (c, dx, dy, dw, dh) => c.drawImage(staged.canvas, 0, 0, staged.w, staged.h, dx, dy, dw, dh);
-      else drawImage = (c, dx, dy, dw, dh) => c.drawImage(bitmap.img, bitmap.sx, bitmap.sy, bitmap.cw, bitmap.ch, dx, dy, dw, dh);
+      if (chroma || pixelFx.length || needSoftFilter) {
+        // la fase pixel è pigra: se la cache dell'aspetto statico è valida non viene mai eseguita
+        let staged = null;
+        drawImage = (c, dx, dy, dw, dh) => {
+          staged ??= this.#pixelStage(bitmap, box, scale, clip, chroma, pixelFx, needSoftFilter ? fp : null, t, fps, frame);
+          c.drawImage(staged.canvas, 0, 0, staged.w, staged.h, dx, dy, dw, dh);
+        };
+      } else drawImage = (c, dx, dy, dw, dh) => c.drawImage(bitmap.img, bitmap.sx, bitmap.sy, bitmap.cw, bitmap.ch, dx, dy, dw, dh);
+    }
+
+    // Cache dell'aspetto statico (solo immagini): filtro/effetti/chroma sono costosi e il risultato non
+    // cambia da un fotogramma all'altro. Si attiva quando i parametri restano identici per 2 fotogrammi.
+    let cssNow = css;
+    if (bitmap && clip.kind === 'image' && (css || chroma || needSoftFilter || pixelFx.length) && !pixelFx.some((f) => f.type === 'glitch' || f.type === 'vhs')) {
+      const cw = Math.min(2048, Math.max(2, Math.round(box.w * scale)));
+      const ch = Math.min(2048, Math.max(2, Math.round((cw * box.h) / box.w)));
+      const key = [clip.mediaId, cw, ch, css, clip.crop.l, clip.crop.t, clip.crop.r, clip.crop.b, chroma ? `${chroma.color}${chroma.similarity}${chroma.smoothness}` : '', pixelFx.map((f) => `${f.type}${f.amount}`).join(','), needSoftFilter ? JSON.stringify(fp) : ''].join('|');
+      const stable = this.#lookKeys.get(clip.id) === key;
+      this.#lookKeys.set(clip.id, key);
+      if (stable) {
+        let look = this.#looks.get(clip.id);
+        if (look?.key === key) {
+          this.lookHits++;
+          this.#looks.delete(clip.id);
+          this.#looks.set(clip.id, look); // LRU: più recente in coda
+        } else {
+          look = this.#buildLook(clip.id, key, cw, ch, drawImage, css);
+          this.lookBuilds++;
+        }
+        const cache = look.canvas;
+        drawImage = (c, dx, dy, dw, dh) => c.drawImage(cache, 0, 0, cw, ch, dx, dy, dw, dh);
+        cssNow = '';
+      }
     }
 
     const target = needLayer ? this.#layerCtx(W, H) : ctx;
@@ -349,21 +384,14 @@ export class Renderer {
 
     const bx = box.ox - box.w / 2;
     const by = box.oy - box.h / 2;
-    if (css) target.filter = css;
+    if (cssNow) target.filter = cssNow;
     if (drawImage) drawImage(target, bx, by, box.w, box.h);
     else if (procedural) procedural(target);
-    if (css) target.filter = 'none';
+    if (cssNow) target.filter = 'none';
 
     // overlay (solo nello strato isolato, con 'source-atop': agiscono dove c'è contenuto)
     if (needLayer) {
-      if (glow && drawImage && this.supportsFilter) {
-        target.save();
-        target.globalAlpha = (glow.amount / 100) * 0.7;
-        target.globalCompositeOperation = 'lighter';
-        target.filter = `blur(${((glow.amount / 100) * H * 0.02 + 1).toFixed(2)}px) brightness(1.25)`;
-        drawImage(target, bx, by, box.w, box.h);
-        target.restore();
-      }
+      if (glow && drawImage && this.supportsFilter) this.#paintGlow(target, glow, drawImage, box, scale, H, bx, by);
       this.#paintOverlays(target, overlays, box, bx, by);
     }
     target.restore();
@@ -376,6 +404,58 @@ export class Renderer {
       ctx.restore();
     }
     drawOverlayOnly();
+  }
+
+  /** Elabora una volta l'aspetto statico del clip in un canvas della dimensione a schermo. */
+  #buildLook(id, key, cw, ch, drawImage, css) {
+    let look = this.#looks.get(id);
+    if (!look) {
+      look = { key, canvas: makeCanvas(cw, ch) };
+      this.#looks.set(id, look);
+      if (this.#looks.size > 10) this.#looks.delete(this.#looks.keys().next().value); // LRU
+    } else {
+      this.#looks.delete(id);
+      this.#looks.set(id, look);
+    }
+    look.key = key;
+    if (look.canvas.width !== cw || look.canvas.height !== ch) {
+      look.canvas.width = cw;
+      look.canvas.height = ch;
+    }
+    const g = look.canvas.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 1;
+    g.clearRect(0, 0, cw, ch);
+    if (css) g.filter = css;
+    drawImage(g, 0, 0, cw, ch);
+    g.filter = 'none';
+    return look;
+  }
+
+  /** Bagliore: la sfocatura è molto più economica a 1/4 della risoluzione e visivamente equivalente. */
+  #paintGlow(target, glow, drawImage, box, scale, H, bx, by) {
+    const K = 4;
+    const sw = Math.max(2, Math.round((box.w * scale) / K));
+    const sh = Math.max(2, Math.round((box.h * scale) / K));
+    if (!this.#glow || this.#glow.canvas.width < sw || this.#glow.canvas.height < sh) {
+      const canvas = makeCanvas(Math.max(sw, this.#glow?.canvas.width ?? 0), Math.max(sh, this.#glow?.canvas.height ?? 0));
+      this.#glow = { canvas, ctx: canvas.getContext('2d') };
+    }
+    const g = this.#glow.ctx;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 1;
+    g.clearRect(0, 0, sw, sh);
+    g.filter = `blur(${(((glow.amount / 100) * H * 0.02 + 1) / K).toFixed(2)}px) brightness(1.25)`;
+    drawImage(g, 0, 0, sw, sh);
+    g.filter = 'none';
+    target.save();
+    target.globalAlpha = (glow.amount / 100) * 0.7;
+    target.globalCompositeOperation = 'lighter';
+    target.imageSmoothingEnabled = true;
+    target.drawImage(this.#glow.canvas, 0, 0, sw, sh, bx, by, box.w, box.h);
+    target.restore();
   }
 
   /** Sovrapposizione a tutto canvas (dissolvenza nel nero/bianco delle transizioni). */

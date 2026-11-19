@@ -75,7 +75,7 @@ test('ESPORTAZIONE: video valido, durata, risoluzione, audio udibile e nessun er
     });
     assert.equal(res.w, 854);
     assert.equal(res.h, 480);
-    assert.ok(res.frames >= res.expected * 0.85, `fotogrammi prodotti ${res.frames}/${res.expected}`);
+    assert.ok(res.frames >= res.expected * 0.95, `fotogrammi prodotti ${res.frames}/${res.expected}`);
     assert.equal(res.hidden, false);
 
     const info = ffprobe(file);
@@ -193,7 +193,7 @@ test('nuovo progetto: svuota tutto, anche dopo il ricaricamento', async () => {
     await page.waitForFunction(() => window.__ciak.saveState === 'saved');
     await page.evaluate(() => window.__ciak.selection.clear());
     await page.getByRole('button', { name: 'Nuovo', exact: true }).click();
-    await page.getByRole('button', { name: 'Nuovo progetto' }).click();
+    await page.locator('dialog[open]').getByRole('button', { name: 'Nuovo progetto' }).click();
     await page.waitForFunction(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).length === 0 && Object.keys(window.__ciak.store.project.media).length === 0);
     await page.waitForFunction(() => window.__ciak.saveState === 'saved');
     await page.reload();
@@ -229,7 +229,7 @@ print(json.dumps({'n': len(names), 'clips': sum(len(t['clips']) for t in p['trac
     assert.equal(JSON.parse(py.stdout).clips, 2);
     // nuovo progetto, poi apertura del pacchetto
     await page.getByRole('button', { name: 'Nuovo', exact: true }).click();
-    await page.getByRole('button', { name: 'Nuovo progetto' }).click();
+    await page.locator('dialog[open]').getByRole('button', { name: 'Nuovo progetto' }).click();
     await page.waitForFunction(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).length === 0);
     const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /Apri…/ }).click()]);
     await chooser.setFiles(file);

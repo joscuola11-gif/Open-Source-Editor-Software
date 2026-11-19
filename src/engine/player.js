@@ -23,6 +23,8 @@ export class Player extends Emitter {
   #t = 0;
   #playing = false;
   #raf = 0;
+  #timer = 0;
+  #lastExportFrame = -1;
   #wallStart = 0;
   #tStart = 0;
   #token = 0;
@@ -110,7 +112,8 @@ export class Player extends Emitter {
     await this.#waitReady(this.#t, 1200);
     if (!this.#playing) return;
     this.#beginClock(this.#t);
-    this.#raf = requestAnimationFrame(this.#tick);
+    this.#lastExportFrame = -1;
+    this.#schedule();
   }
 
   pause() {
@@ -119,7 +122,7 @@ export class Player extends Emitter {
       return;
     }
     this.#playing = false;
-    cancelAnimationFrame(this.#raf);
+    this.#cancelSchedule();
     this.#pauseAll();
     this.emit('state', false);
     this.#pending = this.#renderPaused();
@@ -175,6 +178,21 @@ export class Player extends Emitter {
   // Orologio
   // ---------------------------------------------------------------------------
 
+  /**
+   * Anteprima: requestAnimationFrame (sincronizzato col display). Esportazione: timer, così la
+   * cadenza dei fotogrammi non dipende dalla velocità di composizione della pagina (che su
+   * macchine lente o in headless scende sotto i 30 Hz e farebbe perdere fotogrammi).
+   */
+  #schedule() {
+    if (this.#exportTarget) this.#timer = setTimeout(() => this.#tick(performance.now()), 0);
+    else this.#raf = requestAnimationFrame(this.#tick);
+  }
+
+  #cancelSchedule() {
+    cancelAnimationFrame(this.#raf);
+    clearTimeout(this.#timer);
+  }
+
   #beginClock(t) {
     this.#wallStart = performance.now();
     this.#tStart = t;
@@ -192,6 +210,15 @@ export class Player extends Emitter {
       } else return this.#finish();
     }
     this.#t = t;
+    if (this.#exportTarget) {
+      // un solo disegno per indice di fotogramma: niente lavoro inutile fra un frame e l'altro
+      const f = Math.floor(t * this.fps + 1e-6);
+      if (f === this.#lastExportFrame) {
+        this.#schedule();
+        return;
+      }
+      this.#lastExportFrame = f;
+    }
     this.#syncMedia(t, true);
     const bad = this.renderer.notReady(this.store.project, t);
     if (bad.length && this.#lastDrawn >= 0) {
@@ -200,7 +227,7 @@ export class Player extends Emitter {
       if (now - this.#stallSince < STALL_TIMEOUT) {
         this.stats.dropped++;
         this.emit('time', t);
-        this.#raf = requestAnimationFrame(this.#tick);
+        this.#schedule();
         return;
       }
     } else this.#stallSince = 0;
@@ -208,14 +235,14 @@ export class Player extends Emitter {
     this.#draw(t);
     this.#trackStats(t0, now);
     this.emit('time', t);
-    this.#raf = requestAnimationFrame(this.#tick);
+    this.#schedule();
   };
 
   #finish() {
     const dur = this.duration;
     this.#t = dur;
     this.#playing = false;
-    cancelAnimationFrame(this.#raf);
+    this.#cancelSchedule();
     this.#pauseAll();
     this.#draw(dur);
     this.emit('time', dur);
