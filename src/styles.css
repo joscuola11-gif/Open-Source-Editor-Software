@@ -2516,3 +2516,21 @@ input[type='range'] {
   display: flex;
   gap: 2px;
 }
+
+/* ---- momenti migliori ---- */
+.hl-item {
+  grid-template-columns: 9.5em 1fr auto;
+  align-items: center;
+}
+.hl-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.hl-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}

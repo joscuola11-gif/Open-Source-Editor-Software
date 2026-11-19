@@ -449,6 +449,57 @@ export function splitClip(p, id, t) {
 }
 
 /**
+ * Divide un clip in tutti i punti `times` (secondi della timeline) che cadono dentro di esso, lontano dai bordi.
+ * @returns {number} quanti tagli ha fatto (i punti troppo vicini ai bordi o fra loro si saltano)
+ */
+export function splitClipAtTimes(p, id, times) {
+  const { track } = requireClip(p, id);
+  requireUnlocked(track);
+  const md = minDur(p);
+  let current = id;
+  let n = 0;
+  for (const t of [...new Set(times)].filter(isNum).sort((a, b) => a - b)) {
+    const c = track.clips.find((q) => q.id === current);
+    if (!c || t < c.start + md - TOL || t > clipEnd(c) - md + TOL) continue;
+    current = splitClip(p, current, t).id;
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Tiene solo gli intervalli `ranges` ([{start, end}] in secondi della timeline) e toglie tutto il resto da tutte le tracce
+ * (o da `trackIds`), chiudendo i buchi: è «il montaggio dei momenti migliori». Gli intervalli che si toccano si uniscono.
+ * @returns {number} quanti intervalli ha tolto
+ */
+export function keepOnly(p, ranges, { trackIds = null, end = null } = {}) {
+  const merged = [];
+  for (const r of [...ranges].filter((q) => isNum(q.start) && isNum(q.end) && q.end > q.start).sort((a, b) => a.start - b.start)) {
+    const last = merged.at(-1);
+    if (last && r.start <= last.end + TOL) last.end = Math.max(last.end, r.end);
+    else merged.push({ start: Math.max(0, r.start), end: r.end });
+  }
+  if (!merged.length) throw new EditError('Nessun intervallo da tenere');
+  const total = end ?? Math.max(0, ...p.tracks.flatMap((t) => t.clips.map(clipEnd)));
+  const gaps = [];
+  let at = 0;
+  for (const r of merged) {
+    if (r.start > at + TOL) gaps.push({ start: at, end: r.start });
+    at = Math.max(at, r.end);
+  }
+  if (total > at + TOL) gaps.push({ start: at, end: total });
+  const md = minDur(p);
+  let n = 0;
+  // da destra a sinistra: togliere in fondo non sposta i punti già calcolati più avanti
+  for (const g of gaps.reverse()) {
+    if (g.end - g.start < md - TOL) continue;
+    cutRange(p, g.start, g.end, { trackIds });
+    n++;
+  }
+  return n;
+}
+
+/**
  * Elimina la parte di clip a sinistra o a destra di `t` (come «Q» e «W» di CapCut). Il resto non si sposta.
  * `side`: 'left' toglie ciò che sta prima di `t`, 'right' ciò che sta dopo.
  */

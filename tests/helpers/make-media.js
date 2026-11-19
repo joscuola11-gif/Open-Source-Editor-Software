@@ -48,6 +48,16 @@ export function makeMedia() {
     run(['-framerate', '30', '-loop', '1', '-i', f('tex.png'), '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-t', '3', '-vf', "crop=640:360:'130+40*sin(2*PI*t*2)':'110+30*cos(2*PI*t*3)'", ...vp8, '-c:a', 'libopus', '-shortest', f('shaky.webm')]);
   if (!existsSync(f('tiny.webm')))
     run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=15:duration=1', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=1', ...vp8, '-c:a', 'libopus', '-shortest', f('tiny.webm')]);
+  // quattro riprese diverse: tagli netti a 1,5 s, 3,5 s e 4,5 s
+  if (!existsSync(f('scenes.webm'))) {
+    run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=1.5', '-f', 'lavfi', '-i', 'smptebars=size=320x180:rate=30:duration=2', '-f', 'lavfi', '-i', 'rgbtestsrc=size=320x180:rate=30:duration=1', '-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=30:duration=2.5',
+      '-filter_complex', '[0:v][1:v][2:v][3:v]concat=n=4:v=1:a=0[v]', '-map', '[v]', ...vp8, '-an', f('scenes.webm')]);
+  }
+  // 30 s: fermo, movimento intenso fra 10 e 15 s, fermo; audio forte solo fra 20 e 25 s
+  if (!existsSync(f('hl.webm'))) {
+    run(['-f', 'lavfi', '-i', 'color=c=0x606060:s=320x180:r=30:d=10', '-f', 'lavfi', '-i', 'nullsrc=s=320x180:r=30:d=5,geq=random(1)*255:128:128', '-f', 'lavfi', '-i', 'color=c=0x606060:s=320x180:r=30:d=15',
+      '-f', 'lavfi', '-i', 'sine=frequency=330:duration=30', '-filter_complex', "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v];[3:a]volume='if(between(t,20,25),0.9,0.04)':eval=frame[a]", '-map', '[v]', '-map', '[a]', ...vp8, '-c:a', 'libopus', f('hl.webm')]);
+  }
   if (!existsSync(f('tone.wav'))) run(['-f', 'lavfi', '-i', 'sine=frequency=660:duration=3', f('tone.wav')]);
   if (!existsSync(f('photo.png'))) run(['-f', 'lavfi', '-i', 'testsrc=size=800x600', '-frames:v', '1', f('photo.png')]);
   if (!existsSync(f('subs.srt')))

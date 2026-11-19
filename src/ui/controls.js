@@ -152,8 +152,8 @@ export function segmented(ctx, { label, options, get, set, history = label }) {
   };
 }
 
-export function actionButton({ label, icon: ic, onClick, title, danger = false }) {
-  return h('button', { class: `btn small${danger ? ' danger' : ''}`, type: 'button', title: title ?? label, onClick }, ic ? icon(ic, 14) : null, label);
+export function actionButton({ label, icon: ic, onClick, title, danger = false, id }) {
+  return h('button', { class: `btn small${danger ? ' danger' : ''}`, type: 'button', id, title: title ?? label, onClick }, ic ? icon(ic, 14) : null, label);
 }
 
 export function section(title, children, { open = true } = {}) {

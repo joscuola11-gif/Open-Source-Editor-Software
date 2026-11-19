@@ -331,6 +331,16 @@ export class Inspector {
         h('p', { class: 'hint' }, 'Quando un video orizzontale va in un formato verticale (o il contrario) i lati non restano neri: si vede la stessa immagine ingrandita e sfocata.'),
       ], { open: clip.backdrop.mode !== 'none' }));
     }
+    if (clip.kind === 'video') {
+      const sens = h('input', { type: 'range', id: 'scene-sens', min: 0, max: 100, step: 5, value: 50, 'aria-label': 'Sensibilità del rilevamento' });
+      out.push(section('Analisi del video', [
+        h('div', { class: 'ctl' }, h('label', { class: 'ctl-label', for: 'scene-sens' }, 'Sensibilità'), sens),
+        h('div', { class: 'btn-row wrap' },
+          actionButton({ label: 'Dividi per scene', icon: 'scissors', id: 'btn-split-scenes', title: 'Trova i cambi di scena (tagli e dissolvenze) e divide il clip lì', onClick: () => actions.splitScenes({ clipId: clip.id, sensitivity: Number(sens.value) / 100 }) }),
+          actionButton({ label: 'Momenti migliori…', icon: 'sparkles', id: 'btn-highlights', title: 'Trova i tratti più vivaci per ricavare un riassunto', onClick: () => actions.openHighlights() })),
+        h('p', { class: 'hint' }, 'Le analisi guardano fotogrammi piccoli del video: su un video lungo possono richiedere un po’. Le dissolvenze lente vengono trovate; le animazioni dentro un’unica ripresa non contano come cambio di scena.'),
+      ], { open: false }));
+    }
     if (clip.kind === 'video' && globalThis.ciakDesktop?.videoTool) {
       const tools = [
         ['reverse', 'Al contrario', 'Riproduce la parte usata del video all’indietro (con l’audio).'],

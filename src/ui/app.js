@@ -26,14 +26,17 @@ import { Storage } from '../engine/storage.js';
 import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export.js';
 import { Teleprompter } from './teleprompter.js';
 import { openProjectsDialog } from './projects-dialog.js';
+import { openHighlightsDialog } from './highlights-dialog.js';
 import { openCaptionsDialog } from './captions-dialog.js';
 import { saveCurrentAsTemplate } from './templates-panel.js';
 import { layoutClips } from '../core/layouts.js';
 import { applyCameraMove, clearCameraMove } from '../core/camera.js';
-import { applySpeedRamp } from '../core/timeline.js';
+import { applySpeedRamp, splitClipAtTimes } from '../core/timeline.js';
 import { cropForAspect, CROP_ASPECTS } from '../core/crop.js';
 import { analyze, autoAdjust, matchColors } from '../core/autocolor.js';
 import { sampleClipFrames } from '../engine/frame-sampler.js';
+import { sampleVideoFrames } from '../engine/video-analysis.js';
+import { bestBoundary, detectScenes } from '../core/scenes.js';
 import { applyTemplate, parseTemplateFile, serializeTemplate, templateFromProject } from '../core/templates.js';
 import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
@@ -1344,6 +1347,48 @@ export class App {
           toast(message ?? `«${name}» aggiunto alla timeline.`, { type: 'success' });
         } else app.pool.removeMedia(mid);
         return r;
+      },
+      // ---- analisi del video: scene e momenti migliori ---------------------------------------
+      /** Divide il clip video nei punti in cui cambia scena (tagli netti e dissolvenze). `sensitivity` 0..1. */
+      async splitScenes({ clipId, sensitivity = 0.5 } = {}) {
+        const f = findClip(app.store.project, clipId ?? app.inspector.clipId);
+        if (!f || f.clip.kind !== 'video') return toast('Seleziona un clip video', { type: 'warn' });
+        const clip = f.clip;
+        const blob = app.pool.blob(clip.mediaId);
+        if (!blob) return toast('File non disponibile', { type: 'warn' });
+        const working = toast('Cerco i cambi di scena…', { ms: 600000 });
+        const label = working.querySelector('.toast-msg');
+        try {
+          const from = clip.in;
+          const to = clip.in + clip.duration * clip.speed;
+          const frames = await sampleVideoFrames(blob, { from, to, fps: 4, onProgress: (v) => { label.textContent = `Cerco i cambi di scena… ${Math.round(v * 80)}%`; } });
+          const found = detectScenes(frames, { sensitivity, minLength: 0.8 });
+          const times = [];
+          for (let i = 0; i < found.length; i++) {
+            const c = found[i];
+            let t = c.t;
+            if (c.kind === 'cut') {
+              // affina: fotogrammi fitti fra i due campioni, il cambio più forte è il taglio vero
+              const dense = await sampleVideoFrames(blob, { from: frames[c.before].t, to: frames[c.after].t + 0.02, fps: 30 });
+              t = bestBoundary(dense)?.t ?? t;
+            }
+            label.textContent = `Cerco i cambi di scena… ${80 + Math.round(((i + 1) / found.length) * 20)}%`;
+            times.push(quantize(clip.start + (t - clip.in) / clip.speed, app.store.project.settings.fps));
+          }
+          if (!times.length) return toast('Non ho trovato cambi di scena. Prova ad aumentare la sensibilità.', { type: 'info' });
+          let n = 0;
+          const r = app.commit('Dividi per scene', (d) => { n = splitClipAtTimes(d, clip.id, times); if (!n) throw new EditError('Nessun taglio possibile'); });
+          if (r.ok) toast(`${n + 1} scene: il clip è stato diviso in ${n + 1} parti.`, { type: 'success' });
+          return r;
+        } catch (e) {
+          toast(`Analisi non riuscita: ${e.message}`, { type: 'warn' });
+        } finally {
+          working.remove();
+        }
+      },
+      /** Finestra «Momenti migliori»: trova i tratti più vivaci del clip video selezionato. */
+      openHighlights() {
+        openHighlightsDialog(app);
       },
       /** Porzione di audio del clip (la parte di file che il clip usa), decodificata: la base degli effetti e dell'analisi. */
       async clipAudio(clip) {
