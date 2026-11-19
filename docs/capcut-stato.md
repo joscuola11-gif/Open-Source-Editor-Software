@@ -54,6 +54,12 @@ Riferimento: `docs/capcut-catalogo-funzioni.txt` (numeri delle voci). Aggiornato
 | 198-203 | Sottotitoli a lunghezza adatta (film, social 9:16, una riga, poche parole), a capo bilanciati, durate leggibili, nessuna sovrapposizione, karaoke parola per parola con i tempi veri | `core/captions.js` |
 | 207 | Toglie le esitazioni («ehm», «uhm») dai sottotitoli | `core/captions.js` |
 | 195 | «Ho già il testo»: il copione si mette a tempo con la voce senza riconoscimento (zero errori di trascrizione); «Solo i tempi»: righe vuote già a tempo da riempire | `core/align.js`, `core/transcribe.js` |
+| 025, 216 | Effetti sonori: 27 suoni generati dal programma (whoosh, salita, impatto, clic, campanello, notifica, laser, pioggia, vento, applauso, battito…), con altezza, volume e varianti; anteprima e inserimento alla testina | `core/synth.js`, `ui/sounds-panel.js` · prove sul segnale (frequenze, durate, forma) |
+| 024, 215, 245, 288, 405 | Musica generata da regole (non da un modello di IA): 7 stili, tempo, tonalità, scala e durata a scelta, «quanto il progetto»; il tempo è verificato con il nostro rilevatore di battiti | `core/synth.js` |
+| 252 | Rilevamento delle scene: tagli netti (affinati al fotogramma) e dissolvenze; «Dividi per scene» | `core/scenes.js`, `engine/video-analysis.js` · prove su video veri con tagli noti |
+| 250, 251 | «Momenti migliori»: i tratti più vivaci (movimento + volume), con marcatori o montaggio dei soli momenti scelti | `core/highlights.js`, `core/timeline.js` `keepOnly` |
+| 087, 088, 131, 189 | Inseguimento di un punto (motion tracking): un testo, adesivo o immagine segue un oggetto del video, in avanti e indietro dalla testina; correlazione normalizzata, precisione sotto il pixel, tratti persi segnalati | `core/tracker.js`, `core/trackmap.js` · prova su una ripresa con camera mossa e percorso noto |
+| 073, 255 | Inquadratura automatica (auto reframe): ingrandisce il video per riempire il formato (anche 16:9 → 9:16) e muove una camera virtuale che segue il soggetto in movimento (zona morta, velocità e accelerazione limitate) | `core/reframe.js` · prova con un quadrato in movimento |
 
 ## Già presenti prima (verificate nel codice)
 Ribalta orizzontale e verticale (64-65), ritaglio con cursori (61), colore dello sfondo del canvas, estrai audio (218-219),
@@ -72,3 +78,9 @@ Vedi il README, sezione «Catalogo CapCut».
   «Buona» e «Migliore» non sono stati provati; la logica è la stessa del modello provato.
 - Il riconoscimento non distingue i parlanti (voce 208) e non riconosce da solo la lingua: va scelta.
 - I tempi delle parole sono ottimi sulle frasi chiare, meno sul parlato sovrapposto a musica forte.
+
+## Limiti dichiarati delle analisi e dei suoni
+- **Suoni e musica non sono stati ascoltati**: li ho verificati solo con misure sul segnale (altezza delle note, tempo, tonalità, durata, livello). La musica è semplice e a regole: non è paragonabile a un brano composto da una persona o da un modello di IA.
+- **Inseguimento**: segue l'aspetto di un punto (non ingrandimenti né rotazioni dell'oggetto); se l'oggetto esce dal quadro o viene coperto lo segna «perso» e l'elemento resta fermo finché non lo ritrova.
+- **Inquadratura automatica**: il soggetto è «ciò che si muove» (o, se tutto è fermo, ciò che spicca per colore); non riconosce volti o persone. Con più cose che si muovono segue la loro media.
+- **Scene**: tagli netti e dissolvenze lente; non vede i cambi di scena dentro un'unica ripresa con animazioni, né le dissolvenze più brevi di circa mezzo secondo (le tratta come tagli).
