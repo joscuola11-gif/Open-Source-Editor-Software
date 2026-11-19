@@ -313,7 +313,10 @@ export class Library {
     const a = this.app;
     return h('div', { class: 'lib-pane' },
       h('p', { class: 'hint' }, 'Clic su un effetto per applicarlo (o rimuoverlo) al clip selezionato. Regola l’intensità nelle proprietà.'),
-      h('div', { class: 'card-grid cols-3' }, EFFECTS.map((e) => h('button', { class: 'card fx-card', type: 'button', 'data-effect': e.id, title: e.label, onClick: () => a.actions.toggleEffect(e.id) }, icon('sparkles', 24), h('span', { class: 'card-label' }, e.label)))),
+      ['Base', 'Stili', 'Distorsioni', 'Atmosfera'].map((g) => [
+        h('h4', { class: 'lib-h', 'data-fx-group': g }, g),
+        h('div', { class: 'card-grid cols-3' }, EFFECTS.filter((e) => (e.group ?? 'Base') === g).map((e) => h('button', { class: 'card fx-card', type: 'button', 'data-effect': e.id, title: e.label, onClick: () => a.actions.toggleEffect(e.id) }, icon('sparkles', 24), h('span', { class: 'card-label' }, e.label)))),
+      ]),
       h('button', { class: 'btn small', type: 'button', onClick: () => a.actions.addAdjustment() }, icon('layers', 14), 'Applica a tutto: livello di regolazione'),
     );
   }

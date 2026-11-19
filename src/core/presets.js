@@ -77,6 +77,28 @@ export const EFFECTS = [
   { id: 'vhs', label: 'VHS', stage: 'pixel', amount: 60 },
   { id: 'film-grain', label: 'Grana pellicola', stage: 'overlay', amount: 50 },
   { id: 'strobe', label: 'Stroboscopio', stage: 'overlay', amount: 60 },
+  // ---- artistici e distorsioni (elaborano i pixel) ----
+  { id: 'cartoon', label: 'Cartone animato', stage: 'pixel', amount: 60, group: 'Stili' },
+  { id: 'sketch', label: 'Disegno a matita', stage: 'pixel', amount: 60, group: 'Stili' },
+  { id: 'poster', label: 'Poster', stage: 'pixel', amount: 50, group: 'Stili' },
+  { id: 'duotone', label: 'Due colori (viola e arancio)', stage: 'pixel', amount: 100, group: 'Stili' },
+  { id: 'duotone-teal', label: 'Due colori (blu e menta)', stage: 'pixel', amount: 100, group: 'Stili' },
+  { id: 'halftone', label: 'Retino a puntini', stage: 'pixel', amount: 50, group: 'Stili' },
+  { id: 'crt', label: 'Vecchio schermo (righe)', stage: 'pixel', amount: 60, group: 'Stili' },
+  { id: 'wave', label: 'Onda', stage: 'pixel', amount: 40, group: 'Distorsioni' },
+  { id: 'swirl', label: 'Vortice', stage: 'pixel', amount: 50, group: 'Distorsioni' },
+  { id: 'bulge', label: 'Lente che rigonfia', stage: 'pixel', amount: 50, group: 'Distorsioni' },
+  { id: 'pinch', label: 'Lente che pizzica', stage: 'pixel', amount: 50, group: 'Distorsioni' },
+  { id: 'zoom-blur', label: 'Sfocatura a zoom', stage: 'pixel', amount: 50, group: 'Distorsioni' },
+  // ---- sovrapposizioni procedurali (si disegnano sopra il clip) ----
+  { id: 'p-snow', label: 'Neve', stage: 'overlay', amount: 50, group: 'Atmosfera' },
+  { id: 'p-rain', label: 'Pioggia', stage: 'overlay', amount: 50, group: 'Atmosfera' },
+  { id: 'p-confetti', label: 'Coriandoli', stage: 'overlay', amount: 50, group: 'Atmosfera' },
+  { id: 'p-sparkles', label: 'Scintille', stage: 'overlay', amount: 50, group: 'Atmosfera' },
+  { id: 'p-bokeh', label: 'Bokeh (luci sfocate)', stage: 'overlay', amount: 50, group: 'Atmosfera' },
+  { id: 'p-dust', label: 'Polvere e graffi', stage: 'overlay', amount: 50, group: 'Atmosfera' },
+  { id: 'p-hearts', label: 'Cuori', stage: 'overlay', amount: 50, group: 'Atmosfera' },
+  { id: 'p-leak', label: 'Perdita di luce', stage: 'overlay', amount: 60, group: 'Atmosfera' },
 ];
 
 export const FONTS = [

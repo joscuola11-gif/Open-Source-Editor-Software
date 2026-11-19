@@ -774,7 +774,7 @@ export class Inspector {
         this.S({ label: meta?.label ?? fx.type, min: 0, max: 100, step: 1, unit: '%', get: (c) => c.effects.find((e) => e.id === fx.id)?.amount ?? 0, set: (c, v) => { const e = c.effects.find((q) => q.id === fx.id); if (e) e.amount = v; }, def: meta?.amount ?? 50, history: `Effetto ${meta?.label ?? ''}` }),
         h('button', { class: 'icon-btn small', type: 'button', title: 'Rimuovi effetto', 'aria-label': `Rimuovi ${meta?.label ?? fx.type}`, onClick: () => actions.removeEffect(fx.id) }, icon('trash', 14))));
     }
-    const sel = h('select', { 'aria-label': 'Aggiungi effetto' }, h('option', { value: '' }, 'Aggiungi effetto…'), EFFECTS.map((e) => h('option', { value: e.id }, e.label)));
+    const sel = h('select', { 'aria-label': 'Aggiungi effetto' }, h('option', { value: '' }, 'Aggiungi effetto…'), ['Base', 'Stili', 'Distorsioni', 'Atmosfera'].map((g) => h('optgroup', { label: g }, EFFECTS.filter((e) => (e.group ?? 'Base') === g).map((e) => h('option', { value: e.id }, e.label)))));
     sel.addEventListener('change', () => {
       if (sel.value) actions.addEffect(sel.value);
       sel.value = '';

@@ -14,11 +14,17 @@ import { clamp, hexToRgb } from '../core/util.js';
 import { valueAt } from '../core/keyframes.js';
 import { clipAnimationState } from '../core/animations.js';
 import { revealShapes } from '../core/reveal.js';
+import { particleField } from '../core/particles.js';
 import { BLEND_MODES, FILTERS } from '../core/presets.js';
 import { isActiveAt } from '../core/timeline.js';
 import { applyGrade, decodeLut, gradeIsIdentity } from '../core/grade.js';
 import { karaokeFraction, prefixLength } from '../core/karaoke.js';
-import { IDENTITY_PARAMS, applyFilterParams, chromaKey, fillNoise, filterCss, glitchSlices, isIdentityParams, rgbSplit } from './pixel-fx.js';
+import { IDENTITY_PARAMS, applyFilterParams, bulge, cartoon, chromaKey, duotone, fillNoise, filterCss, glitchSlices, halftone, isIdentityParams, posterize, rgbSplit, scanlines, sketch, swirl, wave, zoomBlur } from './pixel-fx.js';
+
+/** Effetti che elaborano i pixel (fase «pixel» del clip). */
+const PIXEL_FX = new Set(['pixelate', 'rgb-split', 'glitch', 'mirror', 'vhs', 'cartoon', 'sketch', 'poster', 'duotone', 'duotone-teal', 'halftone', 'crt', 'wave', 'swirl', 'bulge', 'pinch', 'zoom-blur']);
+const DUOTONE = { duotone: [[28, 12, 90], [255, 170, 60]], 'duotone-teal': [[8, 24, 70], [150, 255, 225]] };
+const hashString = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return h >>> 0; };
 
 const BLEND_OP = Object.fromEntries(BLEND_MODES.map((b) => [b.id, b.op]));
 const FILTER_BY_ID = Object.fromEntries(FILTERS.map((f) => [f.id, f]));
@@ -347,7 +353,7 @@ export class Renderer {
     const hasColor = !isIdentityParams(fp);
     const css = this.supportsFilter ? filterCss(fp) : '';
     const needSoftFilter = !this.supportsFilter && (hasColor || fp.blur > 0.05);
-    const pixelFx = bitmap ? clip.effects.filter((f) => ['pixelate', 'rgb-split', 'glitch', 'mirror', 'vhs'].includes(f.type)) : [];
+    const pixelFx = bitmap ? clip.effects.filter((f) => PIXEL_FX.has(f.type)) : [];
     const chroma = bitmap && clip.chroma.enabled ? clip.chroma : null;
     const overlays = this.#overlaysFor(clip, t, fps);
     const gradeOn = !!bitmap && !gradeIsIdentity(clip.grade);
@@ -374,7 +380,7 @@ export class Renderer {
     // Cache dell'aspetto statico (solo immagini): filtro/effetti/chroma sono costosi e il risultato non
     // cambia da un fotogramma all'altro. Si attiva quando i parametri restano identici per 2 fotogrammi.
     let cssNow = css;
-    if (bitmap && clip.kind === 'image' && (css || chroma || needSoftFilter || pixelFx.length || gradeOn) && !pixelFx.some((f) => f.type === 'glitch' || f.type === 'vhs')) {
+    if (bitmap && clip.kind === 'image' && (css || chroma || needSoftFilter || pixelFx.length || gradeOn) && !pixelFx.some((f) => f.type === 'glitch' || f.type === 'vhs' || f.type === 'wave')) {
       const cw = Math.min(2048, Math.max(2, Math.round(box.w * scale)));
       const ch = Math.min(2048, Math.max(2, Math.round((cw * box.h) / box.w)));
       const key = [clip.mediaId, cw, ch, css, clip.crop.l, clip.crop.t, clip.crop.r, clip.crop.b, chroma ? `${chroma.color}${chroma.similarity}${chroma.smoothness}` : '', pixelFx.map((f) => `${f.type}${f.amount}`).join(','), needSoftFilter ? JSON.stringify(fp) : '', gradeOn ? `${JSON.stringify(clip.grade)}${this.#luts?.[clip.grade.lut.id]?.data?.length ?? ''}` : ''].join('|');
@@ -545,6 +551,7 @@ export class Renderer {
       }
     }
     if (grain > 0) out.push({ type: 'grain', a: grain * 0.45, seed: Math.floor(t * fps) });
+    for (const fx of clip.effects) if (fx.type.startsWith('p-')) out.push({ type: 'particles', id: fx.type.slice(2), t: t - clip.start, amount: fx.amount, seed: hashString(clip.id) });
     return out;
   }
 
@@ -563,6 +570,8 @@ export class Renderer {
         g.addColorStop(1, `rgba(0,0,0,${(0.35 + o.v * 0.6).toFixed(3)})`);
         c.fillStyle = g;
         c.fillRect(bx, by, box.w, box.h);
+      } else if (o.type === 'particles') {
+        this.#paintParticles(c, o, box, bx, by);
       } else if (o.type === 'grain') {
         const tile = this.#noiseTile();
         const pat = c.createPattern(tile, 'repeat');
@@ -575,6 +584,73 @@ export class Renderer {
           c.fillRect(bx - 128, by - 128, box.w + 256, box.h + 256);
           c.restore();
         }
+      }
+    }
+    c.restore();
+  }
+
+  /** Disegna le forme di un campo di particelle dentro il riquadro del clip. */
+  #paintParticles(c, o, box, bx, by) {
+    const H = box.h;
+    const X = (x) => bx + x * box.w;
+    const Y = (y) => by + y * H;
+    c.save();
+    for (const p of particleField(o.id, o.t, { amount: o.amount, seed: o.seed })) {
+      c.globalAlpha = Math.max(0, Math.min(1, p.a));
+      if (p.k === 'circle') {
+        const r = p.r * H;
+        if (p.r > 0.02) {
+          // cerchio grande = luce sfocata: bordo morbido
+          const g = c.createRadialGradient(X(p.x), Y(p.y), r * 0.2, X(p.x), Y(p.y), r);
+          g.addColorStop(0, p.color);
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          c.fillStyle = g;
+        } else c.fillStyle = p.color;
+        c.beginPath();
+        c.arc(X(p.x), Y(p.y), r, 0, TAU);
+        c.fill();
+      } else if (p.k === 'line') {
+        c.strokeStyle = p.color;
+        c.lineWidth = Math.max(1, p.w * H);
+        c.lineCap = 'round';
+        c.beginPath();
+        c.moveTo(X(p.x1), Y(p.y1));
+        c.lineTo(X(p.x2), Y(p.y2));
+        c.stroke();
+      } else if (p.k === 'rect') {
+        c.save();
+        c.translate(X(p.x), Y(p.y));
+        c.rotate(p.rot);
+        c.fillStyle = p.color;
+        c.fillRect((-p.w * H) / 2, (-p.h * H) / 2, p.w * H, p.h * H);
+        c.restore();
+      } else if (p.k === 'star') {
+        c.save();
+        c.translate(X(p.x), Y(p.y));
+        c.rotate(p.rot);
+        c.fillStyle = p.color;
+        c.beginPath();
+        const R = p.r * H;
+        for (let i = 0; i < 8; i++) {
+          const a = (i * Math.PI) / 4;
+          const rr = i % 2 === 0 ? R : R * 0.22;
+          if (i === 0) c.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+          else c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        }
+        c.closePath();
+        c.fill();
+        c.restore();
+      } else if (p.k === 'heart') {
+        c.save();
+        c.translate(X(p.x), Y(p.y));
+        c.fillStyle = p.color;
+        c.fill(shapePath('heart', p.size * H, p.size * H));
+        c.restore();
+      } else if (p.k === 'grad') {
+        const g = c.createLinearGradient(X(p.x0), Y(p.y0), X(p.x1), Y(p.y1));
+        for (const [pos, col] of p.stops) g.addColorStop(pos, col);
+        c.fillStyle = g;
+        c.fillRect(bx, by, box.w, box.h);
       }
     }
     c.restore();
@@ -781,6 +857,38 @@ export class Renderer {
         a.fillStyle = `rgba(255,255,255,${(0.05 * k).toFixed(3)})`;
         a.fillRect(0, band, pw, Math.max(2, ph * 0.04));
         a.restore();
+        break;
+      }
+      case 'cartoon':
+      case 'sketch':
+      case 'halftone':
+      case 'wave':
+      case 'swirl':
+      case 'bulge':
+      case 'pinch':
+      case 'zoom-blur': {
+        const src = a.getImageData(0, 0, pw, ph);
+        const dst = a.createImageData(pw, ph);
+        if (fx.type === 'cartoon') cartoon(src.data, dst.data, pw, ph, fx.amount);
+        else if (fx.type === 'sketch') sketch(src.data, dst.data, pw, ph, fx.amount);
+        else if (fx.type === 'halftone') halftone(src.data, dst.data, pw, ph, 3 + k * 8);
+        else if (fx.type === 'wave') wave(src.data, dst.data, pw, ph, k * ph * 0.05, 3, frame * 0.18);
+        else if (fx.type === 'swirl') swirl(src.data, dst.data, pw, ph, k * 4);
+        else if (fx.type === 'bulge') bulge(src.data, dst.data, pw, ph, k * 0.9);
+        else if (fx.type === 'pinch') bulge(src.data, dst.data, pw, ph, -k * 0.9);
+        else zoomBlur(src.data, dst.data, pw, ph, k);
+        a.putImageData(dst, 0, 0);
+        break;
+      }
+      case 'poster':
+      case 'duotone':
+      case 'duotone-teal':
+      case 'crt': {
+        const id = a.getImageData(0, 0, pw, ph);
+        if (fx.type === 'poster') posterize(id.data, 7 - k * 5);
+        else if (fx.type === 'crt') scanlines(id.data, pw, ph, k, Math.max(1, Math.round(ph / 220)));
+        else duotone(id.data, DUOTONE[fx.type][0], DUOTONE[fx.type][1], k);
+        a.putImageData(id, 0, 0);
         break;
       }
       default:

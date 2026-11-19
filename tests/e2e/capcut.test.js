@@ -1481,3 +1481,77 @@ test('colore automatico: «Uniforma a quel clip» avvicina luminosità e colore 
     assert.deepEqual(refClip, [0, 25, 50, 75, 100]);
   });
 });
+
+// ---------------------------------------------------------------- effetti nuovi e sovrapposizioni
+/** Misura nella pagina (senza trasferire i pixel): differenza media fra due fotogrammi, con o senza un effetto. */
+const fxDiff = (page, type, { amount = 70, t1 = 1, t2 = 1 } = {}) =>
+  page.evaluate(async ({ type, amount, t1, t2 }) => {
+    const A = window.__ciak;
+    const clip = () => A.store.project.tracks.flatMap((t) => t.clips)[0];
+    const grab = async (t) => {
+      A.player.seek(t);
+      await A.player.settle();
+      const c = A.preview.canvas;
+      return c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    };
+    const mean = (a, b) => {
+      let s = 0;
+      for (let i = 0; i < a.length; i += 4) s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+      return s / (a.length / 4) / 3;
+    };
+    A.commit('x', (d) => { d.tracks.flatMap((t) => t.clips)[0].effects = []; });
+    const plain1 = await grab(t1);
+    const plain2 = await grab(t2);
+    A.commit('x', (d) => { d.tracks.flatMap((t) => t.clips)[0].effects.push({ id: 'fxtest', type, amount }); });
+    const fx1 = await grab(t1);
+    const fx2 = await grab(t2);
+    A.commit('x', (d) => { d.tracks.flatMap((t) => t.clips)[0].effects = []; });
+    return { changes: mean(plain1, fx1), movesWith: mean(fx1, fx2), movesWithout: mean(plain1, plain2), n: clip().effects.length };
+  }, { type, amount, t1, t2 });
+
+test('effetti: ogni effetto nuovo cambia l’immagine senza errori; le sovrapposizioni si muovono nel tempo', async () => {
+  const pixelFx = { cartoon: 2, sketch: 2, poster: 0.4, duotone: 2, 'duotone-teal': 2, halftone: 2, crt: 2, wave: 1, swirl: 1, bulge: 1, pinch: 1, 'zoom-blur': 1 };
+  const overlays = ['p-snow', 'p-rain', 'p-confetti', 'p-sparkles', 'p-bokeh', 'p-dust', 'p-hearts', 'p-leak'];
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('photo.png')]);
+    await addMedia(page, 0);
+    for (const [type, min] of Object.entries(pixelFx)) {
+      const r = await fxDiff(page, type);
+      assert.ok(r.changes > min, `${type}: cambia l'immagine (${r.changes.toFixed(2)} > ${min})`);
+    }
+    // sovrapposizioni: lo stesso clip a due istanti diversi è diverso (le particelle si muovono)
+    for (const type of overlays) {
+      const r = await fxDiff(page, type, { amount: 90, t1: 0.5, t2: 1.7 });
+      assert.ok(r.changes > 0.05, `${type}: si vede (${r.changes.toFixed(2)})`);
+      assert.ok(r.movesWith > r.movesWithout + 0.05, `${type}: si muove (${r.movesWith.toFixed(2)} contro ${r.movesWithout.toFixed(2)} senza)`);
+    }
+  });
+});
+
+test('effetti: la libreria li mostra per gruppo e il clic li applica e li toglie; il progetto resta valido e si salva', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('photo.png')]);
+    await addMedia(page, 0);
+    await page.locator('.clip').first().click();
+    await openTab(page, 'effects');
+    const groups = await page.locator('[data-fx-group]').allTextContents();
+    assert.deepEqual(groups, ['Base', 'Stili', 'Distorsioni', 'Atmosfera']);
+    assert.ok((await page.locator('[data-effect]').count()) >= 31);
+    await page.click('[data-effect="cartoon"]');
+    assert.deepEqual((await clips(page))[0].effects.map((e) => e.type), ['cartoon']);
+    await page.click('[data-effect="p-snow"]');
+    assert.deepEqual((await clips(page))[0].effects.map((e) => e.type), ['cartoon', 'p-snow']);
+    await page.click('[data-effect="cartoon"]');
+    assert.deepEqual((await clips(page))[0].effects.map((e) => e.type), ['p-snow']);
+    // nell'inspector l'elenco è a gruppi
+    await inspectorTab(page, 'Effetti');
+    const opts = await page.evaluate(() => [...document.querySelectorAll('select[aria-label="Aggiungi effetto"] optgroup')].map((g) => g.label));
+    assert.deepEqual(opts, ['Base', 'Stili', 'Distorsioni', 'Atmosfera']);
+    // salvato e riletto
+    await page.waitForTimeout(900);
+    await page.reload();
+    await page.waitForFunction(() => window.__ciak && document.querySelector('.timeline'));
+    await page.waitForFunction(() => window.__ciak.store.project.tracks.some((t) => t.clips.length));
+    assert.deepEqual((await clips(page))[0].effects.map((e) => e.type), ['p-snow']);
+  });
+});
