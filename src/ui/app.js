@@ -1,7 +1,6 @@
 // Orchestratore: crea i servizi, assembla l'interfaccia e implementa tutte le azioni dell'editor.
 
 import { Emitter, EditError, clamp, debounce, formatBytes, formatDuration, quantize, uid } from '../core/util.js';
-import { LAYOUT_PRESETS, anchorTarget, boundingBox, cellFor, cellRect, containScale, normalizeAngle, rotationScaleFactor } from '../core/layout.js';
 import { Store, Selection } from '../core/store.js';
 import { DEFAULT_TEXT_DURATION, createClip, createProject, isVisualKind, trackTypeFor } from '../core/project.js';
 import {
@@ -47,7 +46,6 @@ const SHORTCUTS = [
   ['Ctrl+C / X / V', 'Copia / Taglia / Incolla alla testina'],
   ['Ctrl+D', 'Duplica'],
   ['Ctrl+A', 'Seleziona tutto'],
-  ['Y', 'Layout: ruota di 90°, ingrandisci, sposta'],
   ['M', 'Aggiungi marcatore'],
   ['N', 'Calamita on/off'],
   ['+ / −  ·  \\', 'Zoom timeline · adatta alla finestra'],
@@ -94,7 +92,6 @@ export class App {
     this.preview = new PreviewView(this);
     this.timeline = new TimelineView(this);
     this.inspector = new Inspector(this);
-    this.preview.layoutPanel.attachDock(this.inspector.el);
 
     this.nameBtn = h('button', { class: 'project-name', type: 'button', title: 'Impostazioni del progetto', onClick: () => this.selection.clear() }, 'Nuovo progetto');
     this.saveLabel = h('span', { class: 'save-state', role: 'status', 'aria-live': 'polite' }, 'Salvato');
@@ -372,10 +369,7 @@ export class App {
         return done(), this.preview.toggleHud();
       case '?':
         return done(), a.showHelp();
-      case 'y':
-        return done(), this.preview.layoutPanel.toggle();
       case 'Escape':
-        if (this.preview.layoutPanel.open) return done(), this.preview.layoutPanel.toggle(false);
         if (!this.store.inGesture) this.selection.clear();
         return;
       default:
@@ -426,47 +420,6 @@ export class App {
 
   #makeActions() {
     const app = this;
-    // --- helper del Layout: lavorano su una bozza `d` e su un clip `c` al tempo della testina ---
-    const loc = (c) => clamp(app.player.time - c.start, 0, c.duration);
-    const val = (c, prop) => valueAt(c, prop, loc(c));
-    const put = (c, prop, v) => setValueAt(c, prop, loc(c), v);
-    const geom = (d, c) => app.renderer.geometry(d, c, app.player.time, d.settings.width, d.settings.height);
-    /** Ingombro del clip a scala 1 con la rotazione attuale (px del canvas del progetto). */
-    const unitBox = (c, d) => {
-      const g = geom(d, c);
-      if (!g) return null;
-      const s = Math.max(1e-6, val(c, 'scale'));
-      return boundingBox(g.w / s, g.h / s, val(c, 'rotation'));
-    };
-    /** Porta l'ingombro del clip contro l'ancora (ax, ay) del quadro. */
-    const placeAt = (c, d, ax, ay) => {
-      const { width: W, height: H } = d.settings;
-      const g = geom(d, c);
-      if (!g) return;
-      const bb = boundingBox(g.w, g.h, val(c, 'rotation'));
-      const t = anchorTarget(ax, ay, W, H, bb.w, bb.h);
-      put(c, 'x', val(c, 'x') + (t.cx - g.cx) / W);
-      put(c, 'y', val(c, 'y') + (t.cy - g.cy) / H);
-    };
-    /** Ruota fino a `to` e riadatta la scala perché il contenuto ruotato resti nel quadro. */
-    const rotateTo = (c, d, to) => {
-      const g = geom(d, c);
-      if (!g) return;
-      const from = val(c, 'rotation');
-      const k = rotationScaleFactor({ w: g.w, h: g.h, fromDeg: from, toDeg: to, W: d.settings.width, H: d.settings.height });
-      put(c, 'rotation', to);
-      if (Math.abs(k - 1) > 1e-9) put(c, 'scale', clamp(val(c, 'scale') * k, 0.02, 20));
-    };
-    const layoutEach = (label, fn) => {
-      const ids = A.layoutTargets();
-      if (!ids.length) return A.noLayoutTarget();
-      return app.commit(label, (d) => {
-        for (const id of ids) {
-          const c = findClip(d, id)?.clip;
-          if (c) fn(c, d);
-        }
-      });
-    };
     const A = {
       recording: false,
 
@@ -792,111 +745,6 @@ export class App {
       clearKeyframes(prop) {
         const id = app.inspector.clipId;
         if (id) app.commit('Rimuovi keyframe', (d) => { delete findClip(d, id).clip.keyframes[prop]; });
-      },
-
-      // ---- layout: ruota di 90°, ingrandisci, sposta, disposizioni -----------------------------
-      /** Clip su cui agisce il Layout: la selezione, oppure il clip visivo sotto la testina (esclusi i livelli di regolazione). */
-      layoutAll() {
-        const p = app.store.project;
-        return app.targets({ visual: true }).filter((id) => findClip(p, id)?.clip.kind !== 'adjustment');
-      },
-      /** Come layoutAll ma senza i clip delle tracce bloccate (il lucchetto impedisce ogni modifica). */
-      layoutTargets() {
-        const p = app.store.project;
-        return A.layoutAll().filter((id) => !findClip(p, id).track.locked);
-      },
-      layoutLocked() {
-        return A.layoutAll().length > 0 && A.layoutTargets().length === 0;
-      },
-      /** Avviso quando non c'è nessun clip su cui agire. */
-      noLayoutTarget() {
-        toast(A.layoutLocked() ? 'La traccia è bloccata: sbloccala (icona del lucchetto) per modificare il clip.' : 'Seleziona un clip (nella timeline o nell’anteprima) oppure posiziona la testina su uno.', { type: 'warn' });
-      },
-      rotateClip(deg) {
-        layoutEach('Ruota', (c, d) => rotateTo(c, d, normalizeAngle(val(c, 'rotation') + deg)));
-      },
-      resetRotation() {
-        layoutEach('Azzera rotazione', (c, d) => rotateTo(c, d, 0));
-      },
-      scaleClip(factor) {
-        layoutEach('Ingrandisci', (c) => put(c, 'scale', clamp(val(c, 'scale') * factor, 0.02, 20)));
-      },
-      /** Scala assoluta (%). Con live:true è un trascinamento (una sola voce di cronologia al termine con endLive). */
-      setClipScale(pct, { live = false } = {}) {
-        const ids = A.layoutTargets();
-        if (!ids.length) return;
-        const fn = (d) => {
-          for (const id of ids) {
-            const c = findClip(d, id)?.clip;
-            if (c) put(c, 'scale', clamp(pct / 100, 0.02, 20));
-          }
-        };
-        if (live) {
-          if (!app.store.inGesture) app.store.beginGesture('Ingrandisci');
-          app.store.previewGesture(fn);
-        } else app.commit('Ingrandisci', fn);
-      },
-      endLive() {
-        app.store.commitGesture();
-      },
-      nudgeClip(dx, dy) {
-        layoutEach('Sposta', (c) => {
-          if (dx) put(c, 'x', val(c, 'x') + dx);
-          if (dy) put(c, 'y', val(c, 'y') + dy);
-        });
-      },
-      /** Porta il clip contro un punto del quadro: ax, ay ∈ {-1, 0, 1} (sinistra/centro/destra, alto/centro/basso). */
-      placeClip(ax, ay) {
-        layoutEach('Sposta', (c, d) => placeAt(c, d, ax, ay));
-      },
-      layoutFit(mode) {
-        layoutEach(mode === 'fill' ? 'Riempi' : 'Adatta', (c, d) => {
-          const { width: W, height: H } = d.settings;
-          const bb = unitBox(c, d);
-          if (!bb) return;
-          const k = mode === 'fill' ? Math.max(W / bb.w, H / bb.h) : containScale(bb.w, bb.h, W, H);
-          put(c, 'scale', clamp(k, 0.02, 20));
-          placeAt(c, d, 0, 0);
-        });
-      },
-      layoutReset() {
-        layoutEach('Ripristina layout', (c, d) => {
-          c.transform.flipX = false;
-          c.transform.flipY = false;
-          put(c, 'rotation', 0);
-          const bb = unitBox(c, d);
-          if (bb) put(c, 'scale', clamp(containScale(bb.w, bb.h, d.settings.width, d.settings.height), 0.02, 20));
-          placeAt(c, d, 0, 0);
-        });
-      },
-      layoutFlip(key) {
-        layoutEach('Specchio', (c) => {
-          c.transform[key] = !c.transform[key];
-        });
-      },
-      /** Disposizioni pronte: i clip selezionati, nell'ordine di selezione, vanno nelle celle (il primo = sfondo/sinistra/sopra). */
-      layoutPreset(id) {
-        const preset = LAYOUT_PRESETS[id];
-        const ids = A.layoutTargets();
-        if (!preset) return;
-        if (!ids.length) return A.noLayoutTarget();
-        if (!preset.applyToAll && ids.length < preset.cells.length)
-          return toast(`«${preset.label}» richiede ${preset.cells.length} clip: selezionali tenendo premuto Maiusc (il primo che clicchi è ${id === 'pip' ? 'lo sfondo' : id === 'split-v' ? 'quello sopra' : 'quello a sinistra'}).`, { type: 'warn', ms: 6500 });
-        app.commit('Disposizione', (d) => {
-          const { width: W, height: H } = d.settings;
-          ids.forEach((cid, i) => {
-            const cl = cellFor(id, i);
-            const c = findClip(d, cid)?.clip;
-            if (!cl || !c) return;
-            const r = cellRect(cl, W, H);
-            const bb = unitBox(c, d);
-            if (!bb) return;
-            put(c, 'scale', clamp(containScale(bb.w, bb.h, r.w, r.h), 0.02, 20));
-            const g = geom(d, c);
-            put(c, 'x', val(c, 'x') + (r.x + r.w / 2 - g.cx) / W);
-            put(c, 'y', val(c, 'y') + (r.y + r.h / 2 - g.cy) / H);
-          });
-        });
       },
 
       // ---- progetto -----------------------------------------------------------------
