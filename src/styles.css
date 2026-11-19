@@ -625,7 +625,16 @@ input[type='range'] {
   flex-direction: column;
   gap: 8px;
 }
+.inline-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.inline-pair .num {
+  width: 64px;
+}
 .sub-row {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -633,6 +642,11 @@ input[type='range'] {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-2);
+}
+.sub-cut {
+  position: absolute;
+  top: 4px;
+  right: 4px;
 }
 .sub-time {
   align-self: flex-start;

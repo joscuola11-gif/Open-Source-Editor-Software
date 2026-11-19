@@ -221,3 +221,98 @@ test('colore: i clip video e i livelli di regolazione usano la stessa correzione
     assert.equal(ok, true);
   });
 });
+
+// ---------------------------------------------------------------------------------------------------
+// Testo e sottotitoli
+// ---------------------------------------------------------------------------------------------------
+
+const subs = (page) => page.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).filter((c) => c.role === 'subtitle').sort((a, b) => a.start - b.start).map((c) => ({ id: c.id, start: c.start, duration: c.duration, text: c.text.content, words: c.text.words, karaoke: c.text.karaoke })));
+
+async function importSub(page, name, content) {
+  await openTab(page, 'subtitles');
+  await page.setInputFiles('input[accept*=".vtt"]', { name, mimeType: 'text/plain', buffer: Buffer.from(content) });
+}
+
+test('sottotitoli: si importano VTT, ASS (karaoke), LRC e TXT; si esportano in più formati e si spostano di tempo', async () => {
+  await withApp(async ({ page }) => {
+    await importSub(page, 'a.vtt', 'WEBVTT\n\n00:01.000 --> 00:02.500\nCiao dal VTT\n\n00:03.000 --> 00:04.000\nSecondo\n');
+    await page.waitForFunction(() => document.querySelectorAll('.sub-row').length === 2);
+    let s = await subs(page);
+    assert.deepEqual(s.map((x) => x.text), ['Ciao dal VTT', 'Secondo']);
+    near(s[0].start, 1, 0.01);
+    near(s[0].duration, 1.5, 0.01);
+
+    // ASS con karaoke: le parole con i tempi e l'effetto si attivano da soli
+    await importSub(page, 'k.ass', '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:10.00,0:00:13.00,Default,,0,0,0,,{\\k50}Una {\\k100}frase {\\k50}cantata\n');
+    await page.waitForFunction(() => document.querySelectorAll('.sub-row').length === 3);
+    s = await subs(page);
+    const k = s.find((x) => x.text === 'Una frase cantata');
+    assert.deepEqual(k.words.map((w) => w.w), ['Una', 'frase', 'cantata']);
+    assert.equal(k.karaoke.enabled, true);
+
+    // LRC e TXT (il testo parte dalla testina)
+    await importSub(page, 'l.lrc', '[00:20.00]Riga lrc uno\n[00:23.00]Riga lrc due\n');
+    await page.waitForFunction(() => document.querySelectorAll('.sub-row').length === 5);
+    await seek(page, 5);
+    await importSub(page, 'note.txt', 'Prima frase\n\nSeconda frase');
+    await page.waitForFunction(() => document.querySelectorAll('.sub-row').length === 7);
+    s = await subs(page);
+    const t = s.find((x) => x.text === 'Prima frase');
+    near(t.start, 5, 0.05, 'il testo parte dalla testina');
+    assert.ok(await page.locator('.toast', { hasText: /TXT/ }).count() >= 1);
+
+    // spostamento di tutti i tempi
+    const before = (await subs(page)).map((x) => x.start);
+    await page.fill('#sub-shift', '2');
+    await page.click('#btn-shift-subs');
+    await page.waitForFunction((b0) => window.__ciak.store.project.tracks.flatMap((c) => c.clips).filter((c) => c.role === 'subtitle').sort((x, y) => x.start - y.start)[0].start > b0 + 1.9, before[0]);
+    const after = (await subs(page)).map((x) => x.start);
+    after.forEach((v, i) => near(v - before[i], 2, 0.05, `sottotitolo ${i}`));
+    // spostare troppo indietro si ferma a zero, senza rompere nulla
+    await page.fill('#sub-shift', '-500');
+    await page.click('#btn-shift-subs');
+    const clamped = (await subs(page))[0].start;
+    assert.ok(clamped >= -1e-9, `non esce dalla timeline (${clamped})`);
+
+    // esportazione: VTT, testo e LRC
+    for (const [fmt, re] of [['vtt', /^WEBVTT/], ['txt', /Ciao dal VTT/], ['lrc', /^\[\d\d:\d\d\.\d\d\]/]]) {
+      await page.selectOption('#sel-export-sub', fmt);
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#btn-export-srt')]);
+      assert.match(dl.suggestedFilename(), new RegExp(`\\.${fmt}$`));
+      const text = await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8');
+      assert.match(text, re, fmt);
+    }
+  });
+});
+
+test('sottotitoli: «Taglia» toglie la frase dal video e da tutte le tracce e chiude il buco (modifica da trascrizione)', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('a.webm'), m.f('tone.wav')]); // video 4 s, audio 3 s
+    await addMedia(page, 0);
+    await addMedia(page, 1);
+    await importSub(page, 'a.vtt', 'WEBVTT\n\n00:00.500 --> 00:01.000\nuno\n\n00:01.000 --> 00:02.000\nda togliere\n\n00:02.500 --> 00:03.000\ntre\n');
+    await page.waitForFunction(() => document.querySelectorAll('.sub-row').length === 3);
+    const dur0 = await page.evaluate(() => window.__ciak.store.project.tracks.filter((t) => t.type !== 'video' || t.name !== 'Sottotitoli').flatMap((t) => t.clips).reduce((s, c) => Math.max(s, c.start + c.duration), 0));
+    await page.locator('.sub-row').nth(1).locator('.sub-cut').click();
+    await page.waitForFunction(() => !window.__ciak.store.project.tracks.flatMap((t) => t.clips).some((c) => c.text?.content === 'da togliere'));
+    const cs = await clips(page);
+    const video = cs.filter((c) => c.kind === 'video').sort((a, b) => a.start - b.start);
+    const audio = cs.filter((c) => c.kind === 'audio').sort((a, b) => a.start - b.start);
+    assert.equal(video.length, 2, 'il video si è diviso in due');
+    near(video[0].duration, 1, 0.05);
+    near(video[1].start, 1, 0.05, 'la seconda parte è scorsa a sinistra');
+    near(video[1].duration, 4 - 2, 0.05);
+    assert.equal(audio.length, 2, 'anche l\'audio si è diviso');
+    near(audio[1].start, 1, 0.05);
+    // il terzo sottotitolo è scorso di un secondo, il primo è rimasto
+    const s = await subs(page);
+    near(s[0].start, 0.5, 0.05);
+    near(s[1].start, 1.5, 0.05);
+    const dur1 = await page.evaluate(() => window.__ciak.store.project.tracks.filter((t) => t.name !== 'Sottotitoli').flatMap((t) => t.clips).reduce((s2, c) => Math.max(s2, c.start + c.duration), 0));
+    near(dur0 - dur1, 1, 0.05, 'la durata cala di un secondo');
+    // si annulla in un colpo solo
+    await page.click('#btn-undo');
+    assert.equal((await clips(page)).filter((c) => c.kind === 'video').length, 1);
+    assert.equal((await subs(page)).length, 3);
+  });
+});

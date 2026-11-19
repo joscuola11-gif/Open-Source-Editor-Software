@@ -6,11 +6,12 @@ import { DEFAULT_TEXT_DURATION, createClip, createProject, isVisualKind, trackTy
 import {
   addClip, addMarker, addMediaClip, addTrack, allClips, clipEnd, copyClips, deleteClips, duplicateClips, findClip, insertFreezeFrame,
   moveTrack, normalizeProject, pasteClips, projectDuration, removeMarker, removeMedia, removeTrack, rippleDelete, setTransition,
-  snapPoints, splitClip, trackWithRoom, trimToTime,
+  snapPoints, splitClip, trackWithRoom, trimToTime, cutRange, planMove, moveClips,
 } from '../core/timeline.js';
 import { removeKeyframeAt, toggleKeyframe, valueAt, setValueAt } from '../core/keyframes.js';
 import { ASPECTS, EFFECTS, EXPORT_SIZES, TEXT_PRESETS } from '../core/presets.js';
-import { formatSrt, parseSrt } from '../core/srt.js';
+import { formatSrt } from '../core/srt.js';
+import { MIME, SUBTITLE_FORMATS, WRITERS, parseSubtitles } from '../core/subtitles.js';
 import { defaultGrade, encodeLut, parseCube } from '../core/grade.js';
 import { unzipStore, zipStore } from '../core/zip.js';
 import { AudioEngine } from '../engine/audio-engine.js';
@@ -31,10 +32,11 @@ import { Inspector } from './inspector.js';
 import { WorkspaceLayout } from './workspace-layout.js';
 
 const SUBTITLE_STYLES = {
-  classic: { size: 5.2, weight: 700, color: '#ffffff', stroke: { width: 0, color: '#000000' }, shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0 }, bg: { enabled: true, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 } },
-  outline: { size: 5.6, weight: 800, color: '#ffffff', stroke: { width: 0.16, color: '#000000' }, shadow: { blur: 6, x: 0, y: 2, color: '#000000', opacity: 0.6 }, bg: { enabled: false, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 } },
-  yellow: { size: 5.6, weight: 800, color: '#ffe14d', stroke: { width: 0.14, color: '#1a1200' }, shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0 }, bg: { enabled: false, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 } },
-  box: { size: 5, weight: 600, color: '#111111', stroke: { width: 0, color: '#000000' }, shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0 }, bg: { enabled: true, color: '#ffffff', opacity: 0.92, padding: 0.35, radius: 0.3 } },
+  classic: { size: 5.2, weight: 700, color: '#ffffff', stroke: { width: 0, color: '#000000' }, shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0 }, bg: { enabled: true, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 }, karaoke: { enabled: false, mode: 'word', color: '#ffe14d' } },
+  outline: { size: 5.6, weight: 800, color: '#ffffff', stroke: { width: 0.16, color: '#000000' }, shadow: { blur: 6, x: 0, y: 2, color: '#000000', opacity: 0.6 }, bg: { enabled: false, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 }, karaoke: { enabled: false, mode: 'word', color: '#ffe14d' } },
+  yellow: { size: 5.6, weight: 800, color: '#ffe14d', stroke: { width: 0.14, color: '#1a1200' }, shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0 }, bg: { enabled: false, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 }, karaoke: { enabled: false, mode: 'word', color: '#ffe14d' } },
+  box: { size: 5, weight: 600, color: '#111111', stroke: { width: 0, color: '#000000' }, shadow: { blur: 0, x: 0, y: 0, color: '#000000', opacity: 0 }, bg: { enabled: true, color: '#ffffff', opacity: 0.92, padding: 0.35, radius: 0.3 }, karaoke: { enabled: false, mode: 'word', color: '#ffe14d' } },
+  karaoke: { size: 5.6, weight: 800, color: '#ffffff', stroke: { width: 0.16, color: '#000000' }, shadow: { blur: 6, x: 0, y: 2, color: '#000000', opacity: 0.6 }, bg: { enabled: false, color: '#000000', opacity: 0.6, padding: 0.3, radius: 0.2 }, karaoke: { enabled: true, mode: 'word', color: '#ffe14d' } },
 };
 
 const SHORTCUTS = [
@@ -937,24 +939,51 @@ export class App {
       },
 
       // ---- sottotitoli ------------------------------------------------------------------
-      async importSrt(file) {
+      async importSubtitles(file) {
         try {
-          const cues = parseSrt(await file.text());
+          const { format, cues } = parseSubtitles(await file.text(), file.name);
           if (!cues.length) return toast('Nessun sottotitolo valido nel file', { type: 'warn' });
-          const style = SUBTITLE_STYLES.classic;
+          // il testo semplice non ha tempi: parte dalla testina
+          const shift = format === 'txt' ? quantize(app.player.time, app.store.project.settings.fps) : 0;
           const r = app.commit('Importa sottotitoli', (d) => {
             let sub = d.tracks.find((t) => t.type === 'video' && t.name === 'Sottotitoli');
             if (!sub) sub = addTrack(d, 'video', { index: 0, name: 'Sottotitoli' });
             for (const cue of cues) {
-              const clip = createClip('text', { name: cue.text.slice(0, 30), role: 'subtitle', start: cue.start, duration: Math.max(0.2, cue.end - cue.start), text: { ...structuredClone(style), content: cue.text }, transform: { y: 0.36 } });
+              const style = structuredClone(SUBTITLE_STYLES[cue.words ? 'karaoke' : 'classic']);
+              const text = { ...style, content: cue.text };
+              if (cue.words) text.words = cue.words.map((w) => ({ t: w.t, w: w.w }));
+              const clip = createClip('text', { name: cue.text.slice(0, 30), role: 'subtitle', start: cue.start + shift, duration: Math.max(0.2, cue.end - cue.start), text, transform: { y: 0.36 } });
               const track = trackWithRoom(d, 'video', clip.start, clip.duration, { preferId: sub.id, fromTop: true });
               addClip(d, track.id, clip, clip.start);
             }
           });
-          if (r.ok) toast(`${cues.length} sottotitoli importati`, { type: 'success' });
+          if (r.ok) toast(`${cues.length} sottotitoli importati (${format.toUpperCase()})`, { type: 'success' });
         } catch (e) {
-          toast(`Importazione SRT non riuscita: ${e.message}`, { type: 'error' });
+          toast(`Importazione dei sottotitoli non riuscita: ${e.message}`, { type: 'error' });
         }
+      },
+      importSrt(file) {
+        return this.importSubtitles(file);
+      },
+      /** Sposta tutti i sottotitoli di `delta` secondi (anche negativo): per sincronizzarli con il parlato. */
+      shiftSubtitles(delta) {
+        if (!Number.isFinite(delta) || delta === 0) return toast('Scrivi di quanti secondi spostare (anche negativo).', { type: 'warn' });
+        const ids = allClips(app.store.project).filter((c) => c.role === 'subtitle').map((c) => c.id);
+        if (!ids.length) return toast('Non ci sono sottotitoli da spostare', { type: 'warn' });
+        const plan = planMove(app.store.project, ids, delta);
+        if (!plan) return toast('Non si possono spostare così: uscirebbero dalla timeline', { type: 'warn' });
+        const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
+        if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
+      },
+      /** «Modifica da trascrizione»: toglie dal video, da tutte le tracce, l'intervallo di un sottotitolo e chiude il buco. */
+      cutSubtitle(id) {
+        const c = findClip(app.store.project, id)?.clip;
+        if (!c) return;
+        const r = app.commit('Taglia dal video', (d) => {
+          const q = findClip(d, id).clip;
+          cutRange(d, q.start, q.start + q.duration);
+        });
+        if (r.ok) toast('Tolto dal video e dal resto delle tracce.', { type: 'success' });
       },
       addSubtitleHere() {
         const clip = createClip('text', { name: 'Sottotitolo', role: 'subtitle', start: app.player.time, duration: 2, text: { ...structuredClone(SUBTITLE_STYLES.classic), content: 'Nuovo sottotitolo' }, transform: { y: 0.36 } });
@@ -977,14 +1006,19 @@ export class App {
           for (const s of allClips(d).filter((c) => c.role === 'subtitle')) Object.assign(s.text, structuredClone(style));
         });
       },
-      exportSrt() {
+      exportSubtitles(format = 'srt') {
+        if (!SUBTITLE_FORMATS.includes(format) || format === 'ass') format = 'srt';
         const p = app.store.project;
         let clips = allClips(p).filter((c) => c.kind === 'text' && c.role === 'subtitle');
         if (!clips.length) clips = allClips(p).filter((c) => c.kind === 'text');
         if (!clips.length) return toast('Non ci sono testi da esportare', { type: 'warn' });
         const cues = clips.sort((a, b) => a.start - b.start).map((c) => ({ start: c.start, end: c.start + c.duration, text: c.text.content.trim() }));
-        downloadBlob(new Blob([formatSrt(cues)], { type: 'text/plain;charset=utf-8' }), `${p.name}.srt`);
-        toast(`${cues.length} sottotitoli esportati`, { type: 'success' });
+        const body = format === 'srt' ? formatSrt(cues) : WRITERS[format](cues);
+        downloadBlob(new Blob([body], { type: `${MIME[format]};charset=utf-8` }), `${p.name}.${format}`);
+        toast(`${cues.length} sottotitoli esportati (.${format})`, { type: 'success' });
+      },
+      exportSrt() {
+        return this.exportSubtitles('srt');
       },
 
       // ---- pacchetto .ciak ------------------------------------------------------------------

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   addClip, addMediaClip, addTrack, clipEnd, deleteClips, duplicateClips, findFreeStart, insertFreezeFrame, moveClips,
   planMove, pasteClips, copyClips, rippleDelete, setSpeed, setTransition, snapPoints, snapValue, splitClip, trimBounds,
-  trimClip, trimToTime, validateProject, repairTrack, normalizeProject, removeMedia, moveTrack, removeTrack, projectDuration,
+  trimClip, trimToTime, cutRange, validateProject, repairTrack, normalizeProject, removeMedia, moveTrack, removeTrack, projectDuration,
 } from '../../src/core/timeline.js';
 import { upsertKeyframe, valueAt } from '../../src/core/keyframes.js';
 import { EditError } from '../../src/core/util.js';
@@ -429,5 +429,82 @@ test('trimToTime: rifiuta di tagliare dentro una transizione invece di tagliare 
   // dove c'è posto invece si può: a destra di a, prima dell'inizio della transizione
   trimToTime(p, a.id, 'right', 9);
   near(clipEnd(a), 9);
+  mustBeValid(p);
+});
+
+test('cutRange: toglie un intervallo e chiude il buco; il clip a cavallo si divide e la sorgente resta coerente', () => {
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  const a = put(p, t, 'v1', 0); // 0..10
+  const b = put(p, t, 'a1'.replace('a1', 'v2'), 10); // 10..16
+  p.markers.push({ id: 'm1', time: 2, label: '' }, { id: 'm2', time: 6, label: '' }, { id: 'm3', time: 14, label: '' });
+  const n = cutRange(p, 4, 12);
+  assert.equal(n, 2);
+  const cs = p.tracks.find((x) => x.id === t).clips;
+  assert.equal(cs.length, 2);
+  near(cs[0].start, 0);
+  near(cs[0].duration, 4);
+  near(cs[1].start, 4, 1e-6);
+  near(cs[1].duration, 4);
+  near(cs[1].in, 2, 1e-6); // b: 12 → 2 s di sorgente consumati
+  near(projectDuration(p), 8);
+  assert.deepEqual(p.markers.map((m) => [m.id, m.time]), [['m1', 2], ['m3', 6]], 'il marcatore dentro sparisce, quello dopo scorre');
+  mustBeValid(p);
+  assert.equal(a.id, cs[0].id);
+  assert.equal(b.id, cs[1].id);
+});
+
+test('cutRange: un solo clip che copre l\'intervallo viene diviso in due, senza buchi', () => {
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  put(p, t, 'v1', 0);
+  cutRange(p, 3, 5);
+  const cs = p.tracks.find((x) => x.id === t).clips;
+  assert.equal(cs.length, 2);
+  near(cs[0].duration, 3);
+  near(cs[1].start, 3);
+  near(cs[1].in, 5, 1e-6);
+  near(cs[1].duration, 5);
+  mustBeValid(p);
+});
+
+test('cutRange: taglia insieme video e audio (sincronizzati); con trackIds solo le tracce scelte', () => {
+  const p = baseProject();
+  const v = videoTrackId(p, 2);
+  const au = audioTrackId(p);
+  put(p, v, 'v1', 0);
+  put(p, au, 'a1', 0);
+  cutRange(p, 2, 4);
+  for (const id of [v, au]) near(p.tracks.find((x) => x.id === id).clips.reduce((s, c) => s + c.duration, 0), id === v ? 8 : 18);
+  const clipsAll = p.tracks.flatMap((x) => x.clips);
+  assert.equal(clipsAll.length, 4, 'ognuno si è diviso in due');
+  mustBeValid(p);
+  const q = baseProject();
+  put(q, videoTrackId(q, 2), 'v1', 0);
+  put(q, audioTrackId(q), 'a1', 0);
+  cutRange(q, 2, 4, { trackIds: [videoTrackId(q, 2)] });
+  assert.equal(q.tracks.find((x) => x.id === audioTrackId(q)).clips.length, 1, 'l\'audio è intatto');
+  assert.equal(q.tracks.find((x) => x.id === audioTrackId(q)).clips[0].duration, 20);
+});
+
+test('cutRange: clip interamente dentro eliminati, clip prima e dopo intatti; rifiuta intervalli assurdi e tracce bloccate', () => {
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  const a = put(p, t, 'v2', 0); // 0..6
+  const mid = put(p, t, 'i1', 6); // 6..11
+  const c = put(p, t, 'v2', 11); // 11..17
+  cutRange(p, 6, 11);
+  const cs = p.tracks.find((x) => x.id === t).clips;
+  assert.deepEqual(cs.map((x) => x.id), [a.id, c.id]);
+  assert.ok(!cs.some((x) => x.id === mid.id));
+  near(cs[1].start, 6);
+  mustBeValid(p);
+  for (const [s0, e0] of [[NaN, 1], [1, NaN], [-1, 2], [5, 5], [5, 5.001]]) assert.throws(() => cutRange(p, s0, e0), EditError, `${s0}..${e0}`);
+  p.tracks.find((x) => x.id === t).locked = true;
+  const before = structuredClone(p);
+  assert.throws(() => cutRange(p, 1, 3), EditError);
+  assert.deepEqual(p, before, 'nessuna modifica con una traccia bloccata');
+  p.tracks.find((x) => x.id === t).locked = false;
+  assert.equal(cutRange(p, 500, 510), 0, 'fuori da ogni clip non succede nulla');
   mustBeValid(p);
 });

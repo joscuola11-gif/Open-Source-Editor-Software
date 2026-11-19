@@ -465,6 +465,55 @@ export function trimToTime(p, id, side, t) {
   return clip;
 }
 
+/**
+ * Elimina l'intervallo [start, end) da tutte le tracce (o solo da `trackIds`) e chiude il buco: i clip successivi
+ * scorrono a sinistra, quelli a cavallo vengono accorciati o divisi. È la base della modifica «da trascrizione»
+ * (taglia il video dove sta una frase) e della rimozione delle pause. Un errore lascia il progetto da annullare
+ * (nell'app l'operazione gira dentro un commit che si riavvolge da solo).
+ * @returns {number} quanti clip sono stati toccati
+ */
+export function cutRange(p, start, end, { trackIds = null } = {}) {
+  if (!isNum(start) || !isNum(end) || start < 0) throw new EditError('Intervallo non valido');
+  const md = minDur(p);
+  const h = md / 2;
+  const len = end - start;
+  if (len < md - TOL) throw new EditError('L\'intervallo da togliere è troppo breve');
+  const tracks = p.tracks.filter((t) => !trackIds || trackIds.includes(t.id));
+  const overlaps = (c) => c.start < end - h && clipEnd(c) > start + h;
+  for (const t of tracks) if (t.locked && t.clips.some(overlaps)) throw new EditError(`La traccia «${t.name}» è bloccata`);
+
+  let touched = 0;
+  for (const track of tracks) {
+    for (const c of [...track.clips]) {
+      if (!overlaps(c)) continue;
+      touched++;
+      const startsBefore = c.start < start - h;
+      const endsAfter = clipEnd(c) > end + h;
+      if (!startsBefore && !endsAfter) {
+        track.clips = track.clips.filter((q) => q.id !== c.id);
+      } else if (startsBefore && endsAfter) {
+        const right = splitClip(p, c.id, start);
+        trimClip(p, right.id, 'start', end);
+        if (right.start < end - TOL) throw new EditError('Qui non si può tagliare: c\'è una transizione o un altro clip vicino');
+      } else if (startsBefore) {
+        trimClip(p, c.id, 'end', start);
+        if (clipEnd(c) > start + TOL) throw new EditError('Qui non si può tagliare: il clip sarebbe troppo corto');
+      } else {
+        trimClip(p, c.id, 'start', end);
+        if (c.start < end - TOL) throw new EditError('Qui non si può tagliare: c\'è una transizione o un altro clip vicino');
+      }
+    }
+  }
+  // chiude il buco
+  for (const track of tracks) {
+    for (const c of track.clips) if (c.start >= end - h) c.start = Math.max(0, c.start - len);
+    sortTrack(track);
+    assertTrackValid(track);
+  }
+  p.markers = p.markers.filter((m) => m.time < start - TOL || m.time >= end - TOL).map((m) => (m.time >= end - TOL ? { ...m, time: Math.max(0, m.time - len) } : m));
+  return touched;
+}
+
 export function deleteClips(p, ids) {
   const idSet = new Set(ids);
   let n = 0;

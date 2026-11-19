@@ -337,21 +337,26 @@ export class Library {
 
   #subtitlesTab() {
     const a = this.app;
-    const file = h('input', { type: 'file', accept: '.srt,text/plain', hidden: true, 'aria-label': 'Importa sottotitoli SRT' });
+    const file = h('input', { type: 'file', accept: '.srt,.vtt,.ass,.ssa,.lrc,.txt,text/plain', hidden: true, 'aria-label': 'Importa sottotitoli (SRT, VTT, ASS, LRC, TXT)' });
     file.addEventListener('change', () => {
-      if (file.files?.[0]) a.actions.importSrt(file.files[0]);
+      if (file.files?.[0]) a.actions.importSubtitles(file.files[0]);
       file.value = '';
     });
+    const fmt = h('select', { id: 'sel-export-sub', 'aria-label': 'Formato di esportazione' }, [['srt', 'SRT'], ['vtt', 'WebVTT'], ['txt', 'Testo'], ['lrc', 'LRC']].map(([v, l]) => h('option', { value: v }, l)));
+    const shift = h('input', { type: 'number', id: 'sub-shift', step: '0.1', value: '0', class: 'num', 'aria-label': 'Spostamento in secondi' });
     this.subList = h('div', { class: 'sub-list', role: 'list' });
     const root = h('div', { class: 'lib-pane' },
       h('div', { class: 'lib-actions wrap' },
-        h('button', { class: 'btn primary', type: 'button', id: 'btn-import-srt', onClick: () => file.click() }, icon('upload', 16), 'Importa .srt'),
+        h('button', { class: 'btn primary', type: 'button', id: 'btn-import-srt', title: 'SRT, VTT, ASS, LRC o testo semplice', onClick: () => file.click() }, icon('upload', 16), 'Importa'),
         h('button', { class: 'btn', type: 'button', id: 'btn-add-sub', onClick: () => a.actions.addSubtitleHere() }, icon('plus', 16), 'Aggiungi qui'),
-        h('button', { class: 'btn', type: 'button', id: 'btn-export-srt', onClick: () => a.actions.exportSrt() }, icon('download', 16), 'Esporta .srt'), file),
+        h('span', { class: 'inline-pair' }, fmt, h('button', { class: 'btn', type: 'button', id: 'btn-export-srt', onClick: () => a.actions.exportSubtitles(fmt.value) }, icon('download', 16), 'Esporta')), file),
+      h('div', { class: 'lib-actions wrap' },
+        h('label', { class: 'inline-pair', title: 'Sposta tutti i sottotitoli: positivo = più tardi, negativo = prima' }, 'Sposta di', shift, 's'),
+        h('button', { class: 'btn small', type: 'button', id: 'btn-shift-subs', onClick: () => a.actions.shiftSubtitles(Number(shift.value)) }, 'Applica')),
       h('div', { class: 'chips', role: 'group', 'aria-label': 'Stile sottotitoli' },
-        [['classic', 'Classico'], ['outline', 'Contorno'], ['yellow', 'Giallo'], ['box', 'Riquadro']].map(([id, label]) => h('button', { class: 'chip', type: 'button', onClick: () => a.actions.styleSubtitles(id) }, label))),
+        [['classic', 'Classico'], ['outline', 'Contorno'], ['yellow', 'Giallo'], ['box', 'Riquadro'], ['karaoke', 'Karaoke']].map(([id, label]) => h('button', { class: 'chip', type: 'button', 'data-style': id, onClick: () => a.actions.styleSubtitles(id) }, label))),
       this.subList,
-      h('p', { class: 'hint' }, 'I sottotitoli sono clip di testo: puoi spostarli, ritagliarli e stilizzarli come gli altri. La trascrizione automatica non è inclusa: l’editor lavora offline, senza servizi esterni.'),
+      h('p', { class: 'hint' }, 'I sottotitoli sono clip di testo: puoi spostarli, ritagliarli e stilizzarli come gli altri. «Taglia» toglie dal video (e da tutte le tracce) il tratto di quella frase: così si monta partendo dalla trascrizione. La trascrizione automatica non è inclusa: l’editor lavora offline, senza servizi esterni.'),
     );
     this.#renderSubtitleList();
     return root;
@@ -376,7 +381,8 @@ export class Library {
       ta.value = c.text.content;
       this.subList.append(h('div', { class: 'sub-row', role: 'listitem' },
         h('button', { class: 'sub-time', type: 'button', title: 'Vai a questo punto', onClick: () => { this.app.player.seek(c.start); this.app.selection.set([c.id]); } }, `${formatDuration(c.start, 1)} → ${formatDuration(c.start + c.duration, 1)}`),
-        ta));
+        ta,
+        h('button', { class: 'icon-btn small sub-cut', type: 'button', title: 'Taglia dal video questo tratto (e chiudi il buco)', 'aria-label': `Taglia dal video il tratto a ${formatDuration(c.start, 1)}`, onClick: () => this.app.actions.cutSubtitle(c.id) }, icon('scissors', 14))));
     }
   }
 }
