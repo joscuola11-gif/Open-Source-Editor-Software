@@ -31,6 +31,21 @@ Riferimento: `docs/capcut-catalogo-funzioni.txt` (numeri delle voci). Aggiornato
 | 384 | M4A/AAC (programma desktop) | idem |
 | 381 | MOV H.264/AAC (programma desktop) | idem |
 | 394 | GIF animata (12 fps, lato corto fino a 480 px, fotogramma per fotogramma) | `engine/audio-export.js` |
+| 242-243 | Voce da testo con le voci installate nel sistema (Windows, macOS, Linux), anteprima e clip audio | `desktop/tts.cjs` · prova nel programma desktop |
+| 051, 100-101, 168, 257-258, 268 | Strumenti video con ffmpeg: al contrario, stabilizza (vidstab), meno disturbo, più nitido, anti-sfarfallio, ingrandisci 2×, più fluido, super rallentatore | `desktop/main.cjs` · prove con misure (PSNR, tremolio) |
+| 376-382 | 4K, H.265, MKV, WebM VP9/AV1, bitrate personalizzato, «Comprimi/converti» di un file qualsiasi | `desktop/main.cjs` |
+| 334-340 | Registrazione di schermo, finestra o webcam (anche insieme, webcam in un cerchio), con microfono e audio del computer (Windows), barra «Registrazione» e clip subito sulla timeline | `engine/screen-recorder.js` · prove nel browser e in Electron con schermo vero |
+| 341-346 | Teleprompter (versione per computer): copione che scorre da solo a parole al minuto, specchio, finestra mobile e ridimensionabile, parte con la registrazione, appunti `//` | `core/teleprompter.js`, `ui/teleprompter.js` |
+| 105-115, 144 | 41 transizioni in 8 gruppi: dissolvenza, sfocatura, scorrimento, spinta (anche il clip uscente si muove), zoom, tendine e divisione, maschere (rombo, stella, cuore, orologio…), grafiche (veneziane, scacchiera, mosaico, glitch) | `core/animations.js`, `core/reveal.js` · prove a pixel |
+| 007-010, 359 | «I miei progetti»: salva con nome, aggiorna, apri, duplica, rinomina, elimina; miniatura; i file si condividono fra progetti | `engine/storage.js` (v2), `ui/projects-dialog.js` |
+| 347-353, 356 | Modelli: 11 modelli pronti (verticali, quadrati, orizzontali), categorie e ricerca, anteprima animata, i tuoi video/foto/musica/testi al posto dei segnaposto (i tempi seguono i clip), si usano come un progetto normale | `core/templates.js`, `core/template-lib.js`, `engine/template-preview.js` |
+| 354, 356 | Salva il tuo montaggio come modello; esporta e importa il file `.ciak-modello` per condividerlo | idem |
+| 074, 311 | Sfondo dietro il clip: copia sfocata (o colore) al posto dei bordi neri, per un clip o per tutti | `engine/renderer.js` |
+| 070-071 | Disposizioni schermo diviso (2, 3, 4 riquadri, 1+2) e PiP (4 angoli), con riempi/adatta | `core/layouts.js` |
+| 090 | Movimenti di camera simulati: zoom lento, panoramiche, inclinazioni, Ken Burns, mano libera, zoom «alla Hitchcock» | `core/camera.js` |
+| 095-097 | Curva di velocità (speed ramp): 7 curve pronte e editor grafico con punti trascinabili; il clip diventa una fila di pezzi a velocità costante, keyframe ricollocati | `core/speedramp.js`, `core/timeline.js` · fuzz |
+| 080-081 | Curve di Bézier per i keyframe: 2 maniglie, 7 curve pronte (anche con rimbalzo/superamento) | `core/keyframes.js`, `ui/curve-editor.js` |
+| 116-121 | Maschere con posizione, rotazione, sfumatura dei bordi e keyframe (dimensione, posizione, sfumatura) | `engine/renderer.js` |
 
 ## Già presenti prima (verificate nel codice)
 Ribalta orizzontale e verticale (64-65), ritaglio con cursori (61), colore dello sfondo del canvas, estrai audio (218-219),
