@@ -282,6 +282,27 @@ export class Inspector {
       out.push(section('Ritaglio', ['l', 't', 'r', 'b'].map((side, i) =>
         this.S({ label: ['Sinistra', 'Alto', 'Destra', 'Basso'][i], min: 0, max: 90, step: 1, unit: '%', get: (c) => c.crop[side] * 100, set: (c, v) => { c.crop[side] = Math.min(0.95 - (side === 'l' ? c.crop.r : side === 'r' ? c.crop.l : side === 't' ? c.crop.b : c.crop.t), v / 100); }, def: 0, history: 'Ritaglio' })), { open: false }));
     }
+    if (clip.kind === 'video' && globalThis.ciakDesktop?.videoTool) {
+      const tools = [
+        ['reverse', 'Al contrario', 'Riproduce la parte usata del video all’indietro (con l’audio).'],
+        ['stabilize', 'Stabilizza (meno tremolio)', 'Corregge le riprese a mano tremolanti; ingrandisce leggermente il quadro per nascondere i bordi.'],
+        ['denoise', 'Riduci il disturbo', 'Toglie la grana di video girati con poca luce.'],
+        ['enhance', 'Più nitido e pulito', 'Meno disturbo e più dettaglio e contrasto.'],
+        ['deflicker', 'Togli lo sfarfallio', 'Per luci artificiali o time-lapse che lampeggiano.'],
+        ['upscale', 'Ingrandisci 2×', 'Raddoppia la risoluzione con interpolazione di qualità (non crea dettagli che non esistono).'],
+        ['smooth', 'Più fluido (60 fps)', 'Aggiunge fotogrammi intermedi: movimenti più morbidi. Lento.'],
+        ['slowmo', 'Super rallentatore', 'Crea fotogrammi intermedi e porta la velocità a 0,25×: rallentatore senza scatti. Lento: usa clip brevi.'],
+      ];
+      const sel = h('select', { id: 'sel-video-tool', 'aria-label': 'Strumento video' }, tools.map(([id, l]) => h('option', { value: id }, l)));
+      const hint = h('p', { class: 'hint', id: 'video-tool-hint' }, tools[0][2]);
+      sel.addEventListener('change', () => { hint.textContent = tools.find((t) => t[0] === sel.value)?.[2] ?? ''; });
+      out.push(section('Strumenti video (algoritmi classici)', [
+        h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Strumento'), sel),
+        hint,
+        h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', id: 'btn-video-tool', onClick: () => this.app.actions.applyVideoTool({ clipId: this.clipId, tool: sel.value }) }, icon('wand', 14), 'Applica')),
+        h('p', { class: 'hint' }, 'Sono elaborazioni classiche, non intelligenza artificiale. Il risultato è un nuovo file che sostituisce quello del clip (si annulla con un passo). Funzionano meglio su clip brevi.'),
+      ], { open: false }));
+    }
     out.push(section('Maschera', [
       this.#add(selectControl(this.ctx, { label: 'Forma', options: MASKS, get: (c) => c.mask.shape, set: (c, v) => { c.mask.shape = v; }, history: 'Maschera' })),
       this.S({ label: 'Dimensione', min: 5, max: 150, step: 1, unit: '%', get: (c) => c.mask.size * 100, set: (c, v) => { c.mask.size = v / 100; }, def: 60, history: 'Maschera' }),

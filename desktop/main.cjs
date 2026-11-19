@@ -334,6 +334,80 @@ ipcMain.handle('ciak:transcode-file', async (event, options = {}) => {
   }
 });
 
+// ---- strumenti video con ffmpeg: al contrario, stabilizza, riduci disturbo, migliora, antisfarfallio, fluidifica, super rallentatore ----
+// Sono algoritmi classici (non intelligenza artificiale). Il risultato torna all'editor come nuovo file: l'originale non cambia.
+const VIDEO_TOOLS = {
+  reverse: { label: 'Al contrario', vf: 'reverse', af: 'areverse', maxBytes: 600e6 },
+  denoise: { label: 'Meno disturbo', vf: 'hqdn3d=4:3:6:4.5' },
+  enhance: { label: 'Più nitido', vf: 'hqdn3d=2:1.5:3:3,unsharp=5:5:0.7:5:5:0.0,eq=contrast=1.06:saturation=1.08' },
+  deflicker: { label: 'Senza sfarfallio', vf: 'deflicker=mode=pm:size=5' },
+  upscale: { label: 'Ingrandito 2×', vf: 'scale=min(iw*2\\,3840):-2:flags=lanczos,unsharp=5:5:0.5' },
+  smooth: { label: 'Più fluido', vf: 'minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1', maxBytes: 200e6 },
+  slowmo: { label: 'Super rallentatore', vf: 'minterpolate=fps=120:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1', maxBytes: 100e6 },
+  stabilize: { label: 'Stabilizzato', twoPass: true },
+};
+
+ipcMain.handle('ciak:video-tool', async (event, input, options = {}) => {
+  assertOurs(event);
+  const tool = VIDEO_TOOLS[options.tool];
+  if (!tool) return { ok: false, error: 'Strumento sconosciuto.' };
+  const bin = ffmpegPath();
+  if (!bin) return { ok: false, error: 'ffmpeg non è disponibile in questa installazione.' };
+  if (convertProc) return { ok: false, error: 'Una conversione è già in corso.' };
+  const data = input instanceof ArrayBuffer ? Buffer.from(input) : ArrayBuffer.isView(input) ? Buffer.from(input.buffer, input.byteOffset, input.byteLength) : null;
+  if (!data || data.length < 100) return { ok: false, error: 'Dati video non validi.' };
+  if (data.length > (tool.maxBytes ?? 1.5e9)) return { ok: false, error: `Questo strumento lavora su file fino a ${Math.round((tool.maxBytes ?? 1.5e9) / 1e6)} MB: il tuo video è troppo grande. Accorcialo prima (taglia il pezzo che ti serve).` };
+  const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'ciak-vt-'));
+  const tmpIn = path.join(dir, 'in.media');
+  const tmpOut = path.join(dir, 'out.mp4');
+  const duration = Number(options.duration) > 0 ? Number(options.duration) : 0;
+  const run = (args, onProgress) => new Promise((resolve) => {
+    const proc = spawn(bin, args, { cwd: dir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    convertProc = proc;
+    let err = '';
+    let buf = '';
+    let last = 0;
+    proc.stdout.on('data', (chunk) => {
+      buf += chunk;
+      const lines = buf.split(/\r?\n/);
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        const m = /^out_time_(?:us|ms)=(\d+)/.exec(line);
+        if (!m || !duration || Date.now() - last < 150) continue;
+        last = Date.now();
+        onProgress?.(Math.min(1, Number(m[1]) / 1e6 / duration));
+      }
+    });
+    proc.stderr.on('data', (c) => { err = (err + c).slice(-2000); });
+    proc.on('error', (e) => resolve({ ok: false, error: `Impossibile avviare ffmpeg: ${e.message}` }));
+    proc.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: convertCancelled ? 'Operazione annullata.' : `ffmpeg ha terminato con errore ${code}. ${err.trim().split('\n').slice(-2).join(' ')}` }));
+  });
+  const send = (v) => { if (!event.sender.isDestroyed()) event.sender.send('ciak:convert-progress', v); };
+  convertCancelled = false;
+  try {
+    fs.writeFileSync(tmpIn, data);
+    const base = ['-y', '-hide_banner', '-loglevel', 'error', '-nostats', '-progress', 'pipe:1'];
+    let vf = tool.vf;
+    if (tool.twoPass) {
+      // 1° passaggio: misura i tremolii; 2° passaggio: li corregge (con un leggero ingrandimento per nascondere i bordi)
+      const a = await run([...base, '-i', tmpIn, '-vf', 'vidstabdetect=shakiness=6:accuracy=15:result=transforms.trf', '-f', 'null', '-'], (v) => send(v * 0.45));
+      if (!a.ok) return a;
+      vf = 'vidstabtransform=input=transforms.trf:zoom=2:smoothing=20:optzoom=1,unsharp=5:5:0.6:5:5:0.0';
+    }
+    const pass = tool.twoPass ? (v) => send(0.45 + v * 0.55) : send;
+    const args = [...base, '-i', tmpIn, '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, ...(tool.af ? ['-af', tool.af] : []), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-f', 'mp4', tmpOut];
+    const r = await run(args, pass);
+    if (!r.ok) return r;
+    const out = fs.readFileSync(tmpOut);
+    return { ok: true, video: out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) };
+  } catch (e) {
+    return { ok: false, error: `Elaborazione non riuscita: ${e.message}` };
+  } finally {
+    convertProc = null;
+    fs.rm(dir, { recursive: true, force: true }, () => {});
+  }
+});
+
 // ---- voce da testo (sintetizzatore del sistema) -------------------------------------------------------------
 ipcMain.handle('ciak:tts-voices', async (event) => {
   assertOurs(event);

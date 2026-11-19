@@ -5,7 +5,7 @@ import { Store, Selection } from '../core/store.js';
 import { DEFAULT_TEXT_DURATION, createClip, createProject, isVisualKind, trackTypeFor } from '../core/project.js';
 import {
   addClip, addMarker, addMediaClip, addTrack, allClips, clipEnd, copyClips, deleteClips, duplicateClips, findClip, insertFreezeFrame,
-  moveTrack, normalizeProject, pasteClips, projectDuration, removeMarker, removeMedia, removeTrack, rippleDelete, setTransition,
+  moveTrack, normalizeProject, pasteClips, projectDuration, removeMarker, removeMedia, removeTrack, rippleDelete, setSpeed, setTransition,
   snapPoints, splitClip, trackWithRoom, trimToTime, cutRange, planMove, moveClips,
 } from '../core/timeline.js';
 import { removeKeyframeAt, toggleKeyframe, valueAt, setValueAt } from '../core/keyframes.js';
@@ -980,6 +980,54 @@ export class App {
         if (!plan) return toast('Non si possono spostare così: uscirebbero dalla timeline', { type: 'warn' });
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
+      },
+      /**
+       * Strumenti video con ffmpeg (programma per computer): al contrario, stabilizza, meno disturbo, più nitido,
+       * senza sfarfallio, ingrandisci, più fluido, super rallentatore. Il risultato è un nuovo file che prende il posto
+       * di quello del clip (annullabile); l'originale resta nella libreria.
+       */
+      async applyVideoTool({ clipId, tool }) {
+        const d = globalThis.ciakDesktop;
+        if (!d?.videoTool) return toast('Questo strumento richiede il programma per computer.', { type: 'warn' });
+        const f = findClip(app.store.project, clipId ?? app.inspector.clipId);
+        if (!f || f.clip.kind !== 'video') return toast('Seleziona un clip video', { type: 'warn' });
+        const clip = f.clip;
+        const src = app.store.project.media[clip.mediaId];
+        const blob = app.pool.blob(clip.mediaId);
+        if (!blob || !src) return toast('File non disponibile.', { type: 'warn' });
+        const LABEL = { reverse: 'Al contrario', denoise: 'Meno disturbo', enhance: 'Più nitido', deflicker: 'Senza sfarfallio', upscale: 'Ingrandito 2×', smooth: 'Più fluido', slowmo: 'Super rallentatore', stabilize: 'Stabilizzato' };
+        const progress = toast(`${LABEL[tool] ?? 'Elaborazione'}… può richiedere qualche minuto`, { ms: 600000 });
+        const off = d.onConvertProgress((v) => { const m = progress.querySelector('.toast-msg'); if (m) m.textContent = `${LABEL[tool]}… ${Math.round(v * 100)}%`; });
+        try {
+          const r = await d.videoTool(await blob.arrayBuffer(), { tool, duration: src.duration });
+          if (!r.ok) throw new Error(r.error);
+          const file = new File([r.video], `${clip.name || src.name} · ${LABEL[tool]}.mp4`, { type: 'video/mp4' });
+          const meta = await probeMedia(file);
+          const mid = uid('m');
+          app.pool.add(mid, file);
+          app.pool.setInfo(mid, { thumb: meta.thumb });
+          app.storage.putMedia(mid, file).catch(() => {});
+          const rr = app.commit(`Video: ${LABEL[tool]}`, (dr) => {
+            dr.media[mid] = { id: mid, name: file.name, kind: 'video', mime: 'video/mp4', size: file.size, duration: meta.duration, width: meta.width, height: meta.height, hasAudio: true };
+            const q = findClip(dr, clip.id).clip;
+            const used = q.duration * q.speed;
+            if (tool === 'reverse') q.in = Math.max(0, meta.duration - (q.in + used)); // si guarda la stessa parte, ma all'indietro
+            q.mediaId = mid;
+            q.in = Math.min(q.in, Math.max(0, meta.duration - 0.05));
+            if (tool === 'slowmo') setSpeed(dr, q.id, 0.25);
+            q.duration = Math.min(q.duration, (meta.duration - q.in) / q.speed);
+            return q;
+          });
+          if (rr.ok) {
+            app.#enrich(mid, true);
+            toast(`${LABEL[tool]}: fatto.`, { type: 'success' });
+          } else app.pool.removeMedia(mid);
+        } catch (e) {
+          toast(e.message, { type: 'warn' });
+        } finally {
+          off();
+          progress.remove();
+        }
       },
       /** Strumento a parte: comprime o converte in MP4 un video qualsiasi del computer (richiede il programma per computer). */
       openTranscode() {
