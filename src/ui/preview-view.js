@@ -7,6 +7,7 @@ import { clamp, formatTimecode } from '../core/util.js';
 import { findClip, isActiveAt } from '../core/timeline.js';
 import { valueAt, setValueAt } from '../core/keyframes.js';
 import { isVisualKind } from '../core/project.js';
+import { LayoutPanel } from './layout-panel.js';
 
 const QUALITIES = [
   { id: '640', label: 'Bassa (640)', px: 640 },
@@ -45,6 +46,7 @@ export class PreviewView {
     this.timeTotal = h('span', { class: 'tc total', 'aria-label': 'Durata totale' }, '00:00:00');
     this.playBtn = h('button', { class: 'play-btn', type: 'button', id: 'btn-play', 'aria-label': 'Riproduci', title: 'Riproduci/Pausa (Spazio)', onClick: () => app.actions.togglePlay() }, icon('play', 20));
     const ib = (ic, label, onClick, id) => h('button', { class: 'icon-btn', type: 'button', title: label, 'aria-label': label, id, onClick }, icon(ic, 18));
+    this.layoutBtn = h('button', { class: 'btn small layout-btn', type: 'button', id: 'btn-layout', 'aria-pressed': 'false', 'aria-controls': 'layout-panel', title: 'Layout: ruota di 90°, ingrandisci, sposta (Y)', onClick: () => this.layoutPanel.toggle() }, icon('layout', 16), 'Layout');
     this.loopBtn = ib('repeat', 'Ripeti in loop (L)', () => app.actions.toggleLoop(), 'btn-loop');
     this.guidesBtn = ib('grid', 'Guide di composizione', () => this.toggleGuides(), 'btn-guides');
     this.quality = h('select', { class: 'mini-select', 'aria-label': 'Qualità anteprima', title: 'Qualità dell’anteprima (non influisce sull’esportazione)' }, QUALITIES.map((q) => h('option', { value: q.id }, q.label)));
@@ -63,6 +65,7 @@ export class PreviewView {
         ib('skipFwd', 'Vai alla fine (Fine)', () => app.actions.seekEnd(), 'btn-end'),
       ),
       h('div', { class: 'transport-right' },
+        this.layoutBtn,
         this.timeTotal,
         this.loopBtn,
         this.guidesBtn,
@@ -71,6 +74,8 @@ export class PreviewView {
       ),
     );
     this.el = h('section', { class: 'preview', 'aria-label': 'Anteprima' }, this.stage, this.transport);
+    this.layoutPanel = new LayoutPanel(app, this.layoutBtn);
+    this.el.append(this.layoutPanel.el);
 
     new ResizeObserver(() => this.#fit()).observe(this.stage);
     this.applyQuality();
@@ -172,7 +177,7 @@ export class PreviewView {
     const { store, selection, player } = this.app;
     if (selection.size !== 1) return null;
     const f = findClip(store.project, selection.primary);
-    if (!f || !isVisualKind(f.clip.kind) || f.track.hidden) return null;
+    if (!f || !isVisualKind(f.clip.kind) || f.track.hidden || f.track.locked) return null; // traccia bloccata: nessuna maniglia
     if (!isActiveAt(f.clip, player.time) && player.time !== f.clip.start + f.clip.duration) return null;
     return f.clip;
   }
