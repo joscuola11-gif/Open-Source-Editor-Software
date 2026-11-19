@@ -981,6 +981,39 @@ export class App {
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
       },
+      /** Strumento a parte: comprime o converte in MP4 un video qualsiasi del computer (richiede il programma per computer). */
+      openTranscode() {
+        const d = globalThis.ciakDesktop;
+        if (!d?.transcodeFile) return toast('Questa funzione richiede il programma per computer.', { type: 'warn' });
+        const sel = h('select', { id: 'tc-preset', 'aria-label': 'Cosa fare' },
+          h('option', { value: 'compress720' }, 'Comprimi (720p, file molto più piccolo)'),
+          h('option', { value: 'compress480' }, 'Comprimi molto (480p)'),
+          h('option', { value: 'convert' }, 'Converti in MP4 (stessa risoluzione, buona qualità)'));
+        const progress = h('progress', { max: 1, value: 0, hidden: true, class: 'exp-progress', 'aria-label': 'Avanzamento' });
+        const status = h('p', { class: 'hint', id: 'tc-status', role: 'status' });
+        const body = h('div', { class: 'exp-form' }, h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Cosa fare'), sel), h('p', { class: 'hint' }, 'Scegli un video qualsiasi del tuo computer: viene ricodificato in MP4 (H.264/AAC), adatto a chat, e-mail e social. L’originale non viene toccato.'), progress, status);
+        let ctl;
+        const start = { label: 'Scegli il video e avvia', primary: true, id: 'tc-start', onClick: async () => {
+          progress.hidden = false;
+          progress.value = 0;
+          status.textContent = 'Scegli il file…';
+          ctl.setActions([{ label: 'Annulla', danger: true, id: 'tc-cancel', onClick: () => { d.cancelConvert(); return false; } }]);
+          const off = d.onConvertProgress((v) => { progress.value = v; status.textContent = `Conversione… ${Math.round(v * 100)}%`; });
+          const r = await d.transcodeFile({ preset: sel.value });
+          off();
+          progress.hidden = true;
+          if (r.ok) {
+            const pct = Math.round((1 - r.bytesOut / r.bytesIn) * 100);
+            status.replaceChildren(h('span', { class: 'ok', id: 'tc-done' }, icon('check', 16), ` Fatto: ${r.path.split(/[\\/]/).pop()} · ${formatBytes(r.bytesIn)} → ${formatBytes(r.bytesOut)}${pct > 0 ? ` (${pct}% in meno)` : ''}`), ' ', h('button', { class: 'btn small', type: 'button', onClick: () => d.showInFolder(r.path) }, 'Mostra nella cartella'));
+            ctl.setActions([{ label: 'Chiudi', primary: true, id: 'close' }]);
+          } else {
+            status.textContent = r.canceled ? '' : r.error;
+            ctl.setActions([{ label: 'Chiudi', id: 'close' }, start]);
+          }
+          return false;
+        } };
+        ctl = openDialog({ title: 'Comprimi o converti un video', content: body, actions: [{ label: 'Chiudi' }, start] });
+      },
       /** «Voce da testo»: finestra con testo, voce e velocità; il risultato diventa un clip audio alla testina. */
       async openSpeech() {
         const d = globalThis.ciakDesktop;

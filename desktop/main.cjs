@@ -261,6 +261,79 @@ ipcMain.handle('ciak:convert-audio', async (event, input, options = {}) => {
   }
 });
 
+// ---- comprimi o converti un video qualsiasi (strumento a parte, non serve un progetto) -----------------------
+const TRANSCODE = {
+  compress720: { label: 'compresso 720p', vf: 'scale=-2:min(720\\,ih)', crf: 28 },
+  compress480: { label: 'compresso 480p', vf: 'scale=-2:min(480\\,ih)', crf: 30 },
+  convert: { label: 'MP4', vf: null, crf: 20 },
+};
+
+ipcMain.handle('ciak:transcode-file', async (event, options = {}) => {
+  assertOurs(event);
+  const spec = TRANSCODE[options.preset];
+  if (!spec) return { ok: false, error: 'Scelta non valida.' };
+  const bin = ffmpegPath();
+  if (!bin) return { ok: false, error: 'ffmpeg non è disponibile in questa installazione.' };
+  if (convertProc) return { ok: false, error: 'Una conversione è già in corso.' };
+  const win = BrowserWindow.fromWebContents(event.sender);
+  let input;
+  if (!app.isPackaged && process.env.CIAK_TEST_INPUT_FILE) input = process.env.CIAK_TEST_INPUT_FILE;
+  else {
+    const r = await dialog.showOpenDialog(win, { title: 'Scegli il video', properties: ['openFile'], filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'wmv', 'flv', 'mpg', 'mpeg', 'ts', '3gp'] }] });
+    if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
+    input = r.filePaths[0];
+  }
+  const base = safeName(path.basename(input, path.extname(input)));
+  let dest;
+  if (!app.isPackaged && process.env.CIAK_TEST_SAVE_DIR) dest = path.join(process.env.CIAK_TEST_SAVE_DIR, `${base}-${spec.label.replace(/\s+/g, '-')}.mp4`);
+  else {
+    const r = await dialog.showSaveDialog(win, { title: 'Salva il video', defaultPath: path.join(path.dirname(input), `${base} (${spec.label}).mp4`), filters: [{ name: 'Video MP4', extensions: ['mp4'] }] });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    dest = r.filePath.toLowerCase().endsWith('.mp4') ? r.filePath : `${r.filePath}.mp4`;
+  }
+  if (path.resolve(dest) === path.resolve(input)) return { ok: false, error: 'Scegli un nome diverso da quello del file originale.' };
+  const tmpOut = `${dest}.part`;
+  const args = ['-y', '-hide_banner', '-nostats', '-progress', 'pipe:1', '-i', input, '-map', '0:v:0', '-map', '0:a:0?', ...(spec.vf ? ['-vf', spec.vf] : []), '-c:v', 'libx264', '-preset', 'medium', '-crf', String(spec.crf), '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-f', 'mp4', tmpOut];
+  convertCancelled = false;
+  try {
+    const result = await new Promise((resolve) => {
+      const proc = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      convertProc = proc;
+      let err = '';
+      let total = 0;
+      let buf = '';
+      let last = 0;
+      proc.stderr.on('data', (c) => {
+        err = (err + c).slice(-4000);
+        const d = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(err);
+        if (d && !total) total = Number(d[1]) * 3600 + Number(d[2]) * 60 + Number(d[3]);
+      });
+      proc.stdout.on('data', (chunk) => {
+        buf += chunk;
+        const lines = buf.split(/\r?\n/);
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          const m = /^out_time_(?:us|ms)=(\d+)/.exec(line);
+          if (!m || !total || Date.now() - last < 150) continue;
+          last = Date.now();
+          if (!event.sender.isDestroyed()) event.sender.send('ciak:convert-progress', Math.min(1, Number(m[1]) / 1e6 / total));
+        }
+      });
+      proc.on('error', (e) => resolve({ ok: false, error: `Impossibile avviare ffmpeg: ${e.message}` }));
+      proc.on('close', (code) => resolve(code === 0 ? { ok: true } : { ok: false, error: convertCancelled ? 'Conversione annullata.' : `ffmpeg ha terminato con errore ${code}. ${err.trim().split('\n').slice(-2).join(' ')}` }));
+    });
+    if (!result.ok) return result;
+    fs.renameSync(tmpOut, dest);
+    savedFiles.add(dest);
+    return { ok: true, path: dest, bytesIn: fs.statSync(input).size, bytesOut: fs.statSync(dest).size };
+  } catch (e) {
+    return { ok: false, error: `Conversione non riuscita: ${e.message}` };
+  } finally {
+    convertProc = null;
+    fs.rm(tmpOut, { force: true }, () => {});
+  }
+});
+
 // ---- voce da testo (sintetizzatore del sistema) -------------------------------------------------------------
 ipcMain.handle('ciak:tts-voices', async (event) => {
   assertOurs(event);

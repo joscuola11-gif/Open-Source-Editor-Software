@@ -145,6 +145,7 @@ export class Library {
       h('div', { class: 'lib-actions' },
         h('button', { class: 'btn primary', type: 'button', id: 'btn-import', onClick: () => file.click() }, icon('upload', 16), 'Importa'),
         this.recBtn,
+        globalThis.ciakDesktop?.transcodeFile ? h('button', { class: 'btn', type: 'button', id: 'btn-transcode', title: 'Comprimi o converti un video qualsiasi', onClick: () => a.actions.openTranscode() }, icon('download', 16), 'Comprimi/converti') : null,
         globalThis.ciakDesktop?.ttsVoices ? h('button', { class: 'btn', type: 'button', id: 'btn-tts', title: 'Trasforma un testo in voce (sintetizzatore del computer)', onClick: () => a.actions.openSpeech() }, icon('type', 16), 'Voce da testo') : null,
         file),
       chips,

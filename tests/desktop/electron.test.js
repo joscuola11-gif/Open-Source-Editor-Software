@@ -407,6 +407,34 @@ test('desktop: codec e contenitori a scelta (H.265, MKV, WebM VP9/AV1) e bitrate
   }
 });
 
+test('desktop: «Comprimi/converti» ricodifica un video qualsiasi in MP4 più leggero, senza toccare l\'originale', { skip }, async () => {
+  const outDir = tmp('ciak-tc-');
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg', CIAK_TEST_SAVE_DIR: outDir, CIAK_TEST_INPUT_FILE: m.f('a.webm') });
+  try {
+    const before = statSync(m.f('a.webm')).size;
+    await win.click('#btn-transcode');
+    await win.waitForSelector('#tc-preset');
+    await win.selectOption('#tc-preset', 'compress480');
+    await win.click('button[data-act="tc-start"]');
+    await win.waitForSelector('#tc-done', { timeout: 120000 });
+    const out = path.join(outDir, readdirSync(outDir).find((f) => f.endsWith('.mp4')));
+    const info = ffprobe(out);
+    assert.equal(info.video.codec_name, 'h264');
+    assert.equal(info.audio.codec_name, 'aac');
+    assert.ok(info.video.height <= 480, `altezza ${info.video.height}`);
+    assert.equal(info.video.pix_fmt, 'yuv420p');
+    assert.ok(Math.abs(info.duration - 4) < 0.5, `durata ${info.duration}`);
+    const dec = spawnSync('ffmpeg', ['-v', 'error', '-i', out, '-f', 'null', '-'], { encoding: 'utf8' });
+    assert.equal(dec.stderr.trim(), '', 'decodifica senza errori');
+    assert.equal(statSync(m.f('a.webm')).size, before, 'l\'originale non è stato toccato');
+    assert.ok(readdirSync(outDir).every((f) => !f.endsWith('.part')), 'nessun file temporaneo');
+    assert.match(await win.textContent('#tc-status'), /→/, 'mostra la dimensione prima e dopo');
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('desktop: «Voce da testo» trasforma un testo in un clip audio con la voce del sistema', { skip }, async () => {
   const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg' });
   try {
@@ -445,7 +473,7 @@ test('desktop: esporta in MP4 vero (H.264/AAC, frequenza costante, faststart) tr
   try {
     // il ponte espone solo ciò che serve e la pagina continua a non vedere Node
     const bridge = await win.evaluate(() => ({ keys: Object.keys(window.ciakDesktop).sort(), node: typeof require, proc: typeof process }));
-    assert.deepEqual(bridge.keys, ['cancelConvert', 'convertAudio', 'convertToMp4', 'isDesktop', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder', 'tts', 'ttsVoices']);
+    assert.deepEqual(bridge.keys, ['cancelConvert', 'convertAudio', 'convertToMp4', 'isDesktop', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices']);
     assert.equal(`${bridge.node}|${bridge.proc}`, 'undefined|undefined');
     // dati non validi e percorsi non autorizzati non fanno danni
     const bad = await win.evaluate(() => window.ciakDesktop.convertToMp4(new Uint8Array(10), {}));
