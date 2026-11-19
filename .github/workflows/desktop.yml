@@ -1,9 +1,19 @@
-# Costruisce il programma desktop (installer) su macchine Windows/macOS/Linux vere.
-# Avvio manuale: scheda «Actions» → «Programma desktop» → «Run workflow». Gli installer compaiono negli «Artifacts».
+# Costruisce il programma desktop (installer e zip) su macchine Windows/macOS/Linux vere
+# e, se richiesto, lo pubblica in una Release di GitHub.
+#
+# Avvio manuale: scheda «Actions» → «Programma desktop» → «Run workflow».
+#   - lascia «release_tag» vuoto per ottenere i file solo come «Artifacts» (scadono dopo 90 giorni);
+#   - scrivi un nome (es. v1.0.0) per creare anche la Release con i file scaricabili da chiunque abbia accesso al repository.
+# Un tag che inizia per «v» (git push origin v1.0.0) fa la stessa cosa in automatico.
 name: Programma desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Nome della release da creare (es. v1.0.0). Vuoto = solo artifacts.'
+        required: false
+        default: ''
   push:
     tags: ['v*']
 
@@ -48,13 +58,40 @@ jobs:
             release/*.exe
             release/*.zip
             release/*.AppImage
-            release/*.dmg
           if-no-files-found: error
-      - name: Allega alla release (solo per i tag)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+
+  # Un solo job pubblica la Release (le tre build in parallelo si pesterebbero i piedi creando lo stesso tag).
+  release:
+    needs: build
+    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != '') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          files: |
-            release/*.exe
-            release/*.zip
-            release/*.AppImage
+          path: pacchetti
+          pattern: ciak-studio-*
+          merge-multiple: true
+      - run: ls -la pacchetti
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Ciak Studio ${{ inputs.release_tag || github.ref_name }}
+          files: pacchetti/*
+          fail_on_unmatched_files: true
+          body: |
+            **Ciak Studio** — editor video non lineare open source.
+
+            ### Windows
+            - **`Ciak-Studio-Installer-*-x64.exe`**: installer con menu Start e disinstallatore.
+            - **`Ciak-Studio-*-Windows-x64.zip`**: versione portatile. Estrai tutto in una cartella e avvia `Ciak Studio.exe`.
+
+            Alla prima apertura Windows può mostrare «Windows ha protetto il PC» perché il programma non è firmato con un
+            certificato a pagamento: clicca **Ulteriori informazioni → Esegui comunque**.
+
+            ### Altri sistemi
+            Pacchetti macOS (non firmato: clic destro → Apri) e Linux (AppImage). Non sono stati provati su macchine reali.
+
+            ### Licenze
+            Il codice è MIT. I pacchetti includono Electron/Chromium e **ffmpeg (GPLv3)** — licenza in `resources/ffmpeg/LICENSE.txt`,
+            sorgenti su https://ffmpeg.org e https://github.com/eugeneware/ffmpeg-static.
