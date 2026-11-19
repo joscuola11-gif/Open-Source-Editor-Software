@@ -327,13 +327,45 @@ test('desktop: esporta solo audio in FLAC e M4A e il video in MOV tramite ffmpeg
   }
 });
 
+test('desktop: «Voce da testo» trasforma un testo in un clip audio con la voce del sistema', { skip }, async () => {
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg' });
+  try {
+    const voices = await win.evaluate(() => window.ciakDesktop.ttsVoices());
+    if (!voices.length) return; // nessuna voce di sistema in questo ambiente
+    await win.click('#btn-tts');
+    await win.waitForSelector('#tts-text');
+    await win.fill('#tts-text', 'Questa è la voce di prova per il montaggio.');
+    // anteprima: nessun errore
+    await win.click('#btn-tts-preview');
+    await win.waitForTimeout(800);
+    assert.equal(await win.textContent('#tts-status'), '');
+    await win.click('button[data-act="tts-add"]');
+    await win.waitForSelector('.clip.kind-audio', { timeout: 30000 });
+    const [c] = await win.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips));
+    assert.equal(c.kind, 'audio');
+    assert.ok(c.duration > 1.2 && c.duration < 10, `durata della voce ${c.duration}`);
+    const media = await win.evaluate((id) => window.__ciak.store.project.media[id], c.mediaId);
+    assert.equal(media.mime, 'audio/wav');
+    assert.ok(Math.abs(media.duration - c.duration) < 0.01);
+    // testo vuoto: messaggio comprensibile, nessun clip in più
+    await win.click('#btn-tts');
+    await win.waitForSelector('#tts-text');
+    await win.click('button[data-act="tts-add"]');
+    await win.waitForFunction(() => /Scrivi il testo/.test(document.querySelector('#tts-status')?.textContent ?? ''));
+    assert.equal(await win.locator('.clip').count(), 1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
 test('desktop: esporta in MP4 vero (H.264/AAC, frequenza costante, faststart) tramite ffmpeg incluso', { skip }, async () => {
   const outDir = tmp('ciak-mp4-');
   const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg', CIAK_TEST_SAVE_DIR: outDir });
   try {
     // il ponte espone solo ciò che serve e la pagina continua a non vedere Node
     const bridge = await win.evaluate(() => ({ keys: Object.keys(window.ciakDesktop).sort(), node: typeof require, proc: typeof process }));
-    assert.deepEqual(bridge.keys, ['cancelConvert', 'convertAudio', 'convertToMp4', 'isDesktop', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder']);
+    assert.deepEqual(bridge.keys, ['cancelConvert', 'convertAudio', 'convertToMp4', 'isDesktop', 'mp4Available', 'onConvertProgress', 'platform', 'showInFolder', 'tts', 'ttsVoices']);
     assert.equal(`${bridge.node}|${bridge.proc}`, 'undefined|undefined');
     // dati non validi e percorsi non autorizzati non fanno danni
     const bad = await win.evaluate(() => window.ciakDesktop.convertToMp4(new Uint8Array(10), {}));

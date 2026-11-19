@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const tts = require('./tts.cjs');
 
 const APP_FILE = path.join(__dirname, '..', 'dist', 'ciak-studio.html');
 const APP_URL = pathToFileURL(APP_FILE).href;
@@ -243,6 +244,22 @@ ipcMain.handle('ciak:convert-audio', async (event, input, options = {}) => {
   } finally {
     convertProc = null;
     for (const f of [tmpIn, tmpOut]) fs.rm(f, { force: true }, () => {});
+  }
+});
+
+// ---- voce da testo (sintetizzatore del sistema) -------------------------------------------------------------
+ipcMain.handle('ciak:tts-voices', async (event) => {
+  assertOurs(event);
+  return tts.listVoices();
+});
+
+ipcMain.handle('ciak:tts', async (event, text, options = {}) => {
+  assertOurs(event);
+  try {
+    const wav = await tts.synthesize(String(text ?? ''), { voice: typeof options.voice === 'string' ? options.voice : undefined, rate: Number(options.rate) || 1 });
+    return { ok: true, wav: wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
 });
 

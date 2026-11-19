@@ -15,7 +15,7 @@ import { MIME, SUBTITLE_FORMATS, WRITERS, parseSubtitles } from '../core/subtitl
 import { findSilences, removeSilences } from '../core/silence.js';
 import { VOICE_EFFECTS, applyGain, applyVoiceEffect, isolateVoice, loudness, noiseReduce, normalizeGain, pitchShift, removeVoice } from '../core/audio-fx.js';
 import { detectBeats } from '../core/beats.js';
-import { encodeWav } from '../core/wav.js';
+import { decodeWav, encodeWav } from '../core/wav.js';
 import { defaultGrade, encodeLut, parseCube } from '../core/grade.js';
 import { unzipStore, zipStore } from '../core/zip.js';
 import { AudioEngine } from '../engine/audio-engine.js';
@@ -980,6 +980,81 @@ export class App {
         if (!plan) return toast('Non si possono spostare così: uscirebbero dalla timeline', { type: 'warn' });
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
+      },
+      /** «Voce da testo»: finestra con testo, voce e velocità; il risultato diventa un clip audio alla testina. */
+      async openSpeech() {
+        const d = globalThis.ciakDesktop;
+        if (!d?.ttsVoices) return toast('La voce da testo richiede il programma per computer.', { type: 'warn' });
+        const voices = await d.ttsVoices();
+        if (!voices.length) return toast('Nel tuo computer non c’è nessuna voce di sistema: su Windows e macOS sono incluse, su Linux serve «espeak-ng».', { type: 'warn' });
+        const text = h('textarea', { rows: 6, id: 'tts-text', maxlength: 6000, placeholder: 'Scrivi qui ciò che deve dire la voce…', 'aria-label': 'Testo da pronunciare' });
+        const sel = h('select', { id: 'tts-voice', 'aria-label': 'Voce' }, voices.map((v) => h('option', { value: v.id }, `${v.name} (${v.lang})`)));
+        const it = voices.find((v) => /^it/i.test(v.lang));
+        if (it) sel.value = it.id;
+        const rate = h('input', { type: 'range', id: 'tts-rate', min: '0.5', max: '2', step: '0.1', value: '1', 'aria-label': 'Velocità' });
+        const rateLabel = h('span', {}, '1,0×');
+        rate.addEventListener('input', () => { rateLabel.textContent = `${Number(rate.value).toFixed(1).replace('.', ',')}×`; });
+        const status = h('p', { class: 'hint', id: 'tts-status', role: 'status' });
+        let audio = null;
+        const synth = async () => {
+          if (!text.value.trim()) throw new Error('Scrivi il testo da pronunciare.');
+          status.textContent = 'Preparo la voce…';
+          const r = await d.tts(text.value, { voice: sel.value, rate: Number(rate.value) });
+          if (!r.ok) throw new Error(r.error);
+          status.textContent = '';
+          return new Uint8Array(r.wav);
+        };
+        const ctl = openDialog({
+          title: 'Voce da testo',
+          content: h('div', { class: 'exp-form' }, h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Testo'), text), h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Voce'), sel), h('div', { class: 'ctl select' }, h('label', { class: 'ctl-label' }, 'Velocità'), rate, rateLabel), status,
+            h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', id: 'btn-tts-preview', onClick: async () => {
+              try {
+                const wav = await synth();
+                audio?.pause();
+                audio = new Audio(URL.createObjectURL(new Blob([wav], { type: 'audio/wav' })));
+                await audio.play();
+              } catch (e) {
+                status.textContent = e.message;
+              }
+            } }, icon('play', 14), 'Ascolta'))),
+          actions: [{ label: 'Chiudi' }, { label: 'Aggiungi alla timeline', primary: true, id: 'tts-add', onClick: async () => {
+            try {
+              const wav = await synth();
+              audio?.pause();
+              A.addSpeechClip(wav, text.value.trim());
+              return true;
+            } catch (e) {
+              status.textContent = e.message;
+              return false;
+            }
+          } }],
+          onClose: () => audio?.pause(),
+        });
+        void ctl;
+      },
+      /** Inserisce un audio WAV già pronto come clip alla testina (nuovo file nel progetto). */
+      addSpeechClip(wavBytes, label) {
+        const { channels, sampleRate } = decodeWav(wavBytes);
+        const dur = channels[0].length / sampleRate;
+        const mid = uid('m');
+        const name = `Voce · ${label.replace(/\s+/g, ' ').slice(0, 32) || 'testo'}`;
+        const file = new File([wavBytes], `${name}.wav`, { type: 'audio/wav' });
+        app.pool.add(mid, file);
+        app.storage.putMedia(mid, file).catch(() => {});
+        const start = quantize(app.player.time, app.store.project.settings.fps);
+        const r = app.commit('Voce da testo', (d) => {
+          d.media[mid] = { id: mid, name: file.name, kind: 'audio', mime: 'audio/wav', size: file.size, duration: dur, width: 0, height: 0, hasAudio: true };
+          const clip = createClip('audio', { name, mediaId: mid, start, duration: dur });
+          const track = trackWithRoom(d, 'audio', start, dur);
+          addClip(d, track.id, clip, start);
+          return clip;
+        });
+        if (r.ok) {
+          app.selection.set([r.result.id]);
+          app.#enrich(mid, true);
+          toast('Voce aggiunta alla timeline.', { type: 'success' });
+        } else app.pool.removeMedia(mid);
+        return r;
       },
       /** Porzione di audio del clip (la parte di file che il clip usa), decodificata: la base degli effetti e dell'analisi. */
       async clipAudio(clip) {
