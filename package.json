@@ -115,6 +115,7 @@
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
+    "@huggingface/transformers": "^4.3.2",
     "gifenc": "^1.0.3"
   }
 }
