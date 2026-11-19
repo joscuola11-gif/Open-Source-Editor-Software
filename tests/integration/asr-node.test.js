@@ -73,3 +73,10 @@ test('tutta la catena con il modello vero: transcribe() → sottotitoli sensati,
   for (const w of r.words) if (r.speech.some((s) => (w.start + w.end) / 2 >= s.start - 0.05 && (w.start + w.end) / 2 <= s.end + 0.05)) inside++;
   assert.ok(inside >= r.words.length - 1, `${inside}/${r.words.length}`);
 });
+
+test('motore Whisper: non carica «sharp» (nel pacchetto per Windows non c’è) e funziona lo stesso', { skip }, async () => {
+  init();
+  const loaded = Object.keys(require.cache).filter((k) => /node_modules[\\/]sharp[\\/]/.test(k));
+  assert.deepEqual(loaded, [], 'sharp non deve essere caricato');
+  assert.deepEqual(await asr.available(), { ok: true });
+});

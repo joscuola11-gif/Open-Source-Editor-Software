@@ -50,3 +50,43 @@ test('pacchetto: la funzione di confronto riconosce davvero un file mancante', (
   assert.equal(included('desktop/sub/a.cjs', ['desktop/*.cjs']), false, '* non entra nelle cartelle');
   assert.equal(included('desktop/sub/a.cjs', ['desktop/**']), true);
 });
+
+// ---- riconoscimento vocale nel pacchetto ----------------------------------------------------------------------
+const glob = (p) => new RegExp(`^${p.replace(/[.+^$()|[\]\\]/g, '\\$&').replace(/\{([^}]+)\}/g, (_, a) => `(${a.split(',').join('|')})`).replace(/\*\*/g, '§§').replace(/\*/g, '[^/]*').replace(/§§/g, '.*')}$`);
+/** Come electron-builder: ogni elemento in ordine, «!» toglie quello che ha già incluso. */
+function kept(rel, patterns) {
+  let on = false;
+  for (const p of patterns) {
+    if (p.startsWith('!')) {
+      if (glob(p.slice(1)).test(rel)) on = false;
+    } else if (glob(p).test(rel)) on = true;
+  }
+  return on;
+}
+
+test('pacchetto Windows: ci sono i file del motore Whisper per Windows x64 e non quelli inutili', () => {
+  assert.ok(pkg.dependencies['@huggingface/transformers'], 'il motore deve essere una dipendenza di produzione');
+  assert.ok(pkg.build.asarUnpack.some((p) => /onnxruntime-node/.test(p)), 'onnxruntime-node deve stare fuori da app.asar (librerie native)');
+  assert.equal(pkg.build.npmRebuild, false);
+  const win = [...pkg.build.win.files.filter((p) => !p.startsWith('!')), 'node_modules/**', ...pkg.build.win.files.filter((p) => p.startsWith('!'))];
+  for (const f of ['onnxruntime.dll', 'onnxruntime_binding.node']) assert.equal(kept(`node_modules/onnxruntime-node/bin/napi-v6/win32/x64/${f}`, win), true, `${f} deve esserci`);
+  assert.equal(kept('node_modules/onnxruntime-node/dist/index.js', win), true);
+  for (const f of ['DirectML.dll', 'dxcompiler.dll', 'dxil.dll']) assert.equal(kept(`node_modules/onnxruntime-node/bin/napi-v6/win32/x64/${f}`, win), false, `${f} non serve (solo processore)`);
+  for (const f of ['linux/x64/libonnxruntime.so.1', 'darwin/arm64/onnxruntime_binding.node', 'win32/arm64/onnxruntime.dll']) assert.equal(kept(`node_modules/onnxruntime-node/bin/napi-v6/${f}`, win), false, `${f} non va nel pacchetto Windows x64`);
+  for (const f of ['node_modules/onnxruntime-web/dist/ort.min.js', 'node_modules/sharp/lib/index.js', 'node_modules/@img/sharp-linux-x64/lib/sharp.node']) assert.equal(kept(f, win), false, `${f} non serve`);
+  assert.equal(kept('node_modules/@huggingface/transformers/dist/transformers.node.cjs', win), true);
+  assert.equal(kept('node_modules/@huggingface/jinja/dist/index.js', win), true);
+  // le librerie già incluse nella pagina non vanno duplicate nel pacchetto
+  assert.equal(pkg.dependencies['@breezystack/lamejs'], undefined);
+  assert.equal(pkg.dependencies.gifenc, undefined);
+});
+
+test('pacchetto: i file per piattaforma ripetono quelli comuni (altrimenti electron-builder impacchetta l’intero progetto)', () => {
+  for (const plat of ['win', 'linux', 'mac']) {
+    const files = pkg.build[plat].files;
+    for (const p of pkg.build.files) assert.ok(files.includes(p), `${plat}.files deve includere «${p}»`);
+    assert.equal(kept('squillo/dist/index.html', [...files, 'node_modules/**']), false, 'squillo non va nel pacchetto');
+    assert.equal(kept('tests/fixtures/jfk.wav', files), false);
+    assert.equal(kept('dist/ciak-studio.html', files), true);
+  }
+});

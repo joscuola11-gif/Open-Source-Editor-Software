@@ -13,6 +13,35 @@ const LANGS = { it: 'italian', en: 'english', es: 'spanish', fr: 'french', de: '
 const MAX_SECONDS = 40;
 
 /**
+ * transformers.js carica «sharp» (elaborazione di immagini) appena si apre, ma per la voce non serve a nulla e nel pacchetto per Windows
+ * non c'è: lo si sostituisce con un segnaposto che si lamenta solo se qualcuno prova a usarlo.
+ */
+function withoutSharp(load) {
+  const Module = require('module');
+  const original = Module._load;
+  const stub = () => {
+    throw new Error('L\'elaborazione di immagini non è disponibile in questo programma.');
+  };
+  stub.default = stub;
+  Module._load = function patched(request, ...rest) {
+    return request === 'sharp' ? stub : original.call(this, request, ...rest);
+  };
+  try {
+    return load();
+  } finally {
+    Module._load = original;
+  }
+}
+
+/** Su Windows il motore ha bisogno delle librerie di Microsoft Visual C++: se mancano lo si dice in chiaro. */
+function hint(e) {
+  if (process.platform === 'win32' && /ERR_DLOPEN_FAILED|specified module could not be found|non è stato trovato|1114|126/i.test(`${e?.code} ${e?.message}`)) {
+    return ' Su Windows serve «Microsoft Visual C++ Redistributable 2015-2022 (x64)», gratuito: si scarica dal sito di Microsoft (vc_redist.x64.exe).';
+  }
+  return '';
+}
+
+/**
  * @param {{cacheDir: string, localModelsDir?: string|null, allowRemote?: boolean, log?: (m: string) => void}} o
  */
 function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = () => {} }) {
@@ -25,7 +54,7 @@ function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = 
     if (T) return T;
     if (loadError) throw loadError;
     try {
-      T = require('@huggingface/transformers');
+      T = withoutSharp(() => require('@huggingface/transformers'));
       T.env.cacheDir = cacheDir;
       T.env.allowRemoteModels = allowRemote;
       if (localModelsDir) {
@@ -34,7 +63,7 @@ function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = 
       } else T.env.allowLocalModels = false;
       return T;
     } catch (e) {
-      loadError = new Error(`Il motore di riconoscimento vocale non si avvia su questo computer (${e.message.split('\n')[0]}).`);
+      loadError = new Error(`Il motore di riconoscimento vocale non si avvia su questo computer (${e.message.split('\n')[0]}).${hint(e)}`);
       loadError.cause = e;
       throw loadError;
     }

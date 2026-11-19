@@ -1,6 +1,6 @@
 {
   "name": "ciak-studio",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Ciak Studio — editor video non lineare open source che gira nel browser, senza installazione.",
   "type": "module",
   "private": true,
@@ -23,9 +23,11 @@
     "fetch:ffmpeg": "node tools/fetch-ffmpeg.mjs"
   },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0",
+    "gifenc": "^1.0.3",
     "playwright": "1.63.0",
     "sts-whisper-tiny": "^1.0.0"
   },
@@ -71,6 +73,20 @@
           "from": "desktop/ffmpeg/win32-x64",
           "to": "ffmpeg"
         }
+      ],
+      "files": [
+        "desktop/*.cjs",
+        "desktop/build/icon.png",
+        "dist/ciak-studio.html",
+        "package.json",
+        "!node_modules/onnxruntime-web/**",
+        "!node_modules/sharp/**",
+        "!node_modules/@img/**",
+        "!node_modules/onnxruntime-node/{script,src}/**",
+        "!node_modules/**/*.{md,map,ts,d.ts}",
+        "!node_modules/onnxruntime-node/bin/napi-v6/{linux,darwin}/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/{DirectML,dxcompiler,dxil}.dll"
       ]
     },
     "nsis": {
@@ -96,6 +112,19 @@
           "from": "desktop/ffmpeg/linux-x64",
           "to": "ffmpeg"
         }
+      ],
+      "files": [
+        "desktop/*.cjs",
+        "desktop/build/icon.png",
+        "dist/ciak-studio.html",
+        "package.json",
+        "!node_modules/onnxruntime-web/**",
+        "!node_modules/sharp/**",
+        "!node_modules/@img/**",
+        "!node_modules/onnxruntime-node/{script,src}/**",
+        "!node_modules/**/*.{md,map,ts,d.ts}",
+        "!node_modules/onnxruntime-node/bin/napi-v6/{win32,darwin}/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**"
       ]
     },
     "mac": {
@@ -111,12 +140,27 @@
           "from": "desktop/ffmpeg/darwin-${arch}",
           "to": "ffmpeg"
         }
+      ],
+      "files": [
+        "desktop/*.cjs",
+        "desktop/build/icon.png",
+        "dist/ciak-studio.html",
+        "package.json",
+        "!node_modules/onnxruntime-web/**",
+        "!node_modules/sharp/**",
+        "!node_modules/@img/**",
+        "!node_modules/onnxruntime-node/{script,src}/**",
+        "!node_modules/**/*.{md,map,ts,d.ts}",
+        "!node_modules/onnxruntime-node/bin/napi-v6/{win32,linux}/**"
       ]
-    }
+    },
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**"
+    ]
   },
   "dependencies": {
-    "@breezystack/lamejs": "^1.2.7",
-    "@huggingface/transformers": "^4.3.2",
-    "gifenc": "^1.0.3"
+    "@huggingface/transformers": "^4.3.2"
   }
 }

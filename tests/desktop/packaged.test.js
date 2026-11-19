@@ -3,7 +3,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,5 +77,46 @@ test('programma impacchettato: usa ffmpeg del pacchetto e salva un MP4 valido da
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
+  }
+});
+
+// Modelli «inclusi» nel pacchetto (resources/models): si simulano copiando il modello di sviluppo, perché qui non c'è internet.
+const MODEL_SRC = path.join(ROOT, 'node_modules', 'sts-whisper-tiny', 'models');
+const haveModel = existsSync(path.join(MODEL_SRC, 'Xenova', 'whisper-tiny', 'onnx', 'encoder_model_quantized.onnx')) ? false : 'modello non installato (npm i)';
+
+test('programma impacchettato: il riconoscimento vocale parte dal pacchetto (onnxruntime fuori da app.asar, senza sharp) e trascrive la voce vera', { skip: skip || haveModel, timeout: 240000 }, async () => {
+  const bundled = path.join(path.dirname(EXE), 'resources', 'models');
+  const copied = !existsSync(bundled);
+  if (copied) cpSync(MODEL_SRC, bundled, { recursive: true });
+  const app = await electron.launch({
+    executablePath: EXE,
+    args: ['--no-sandbox', `--user-data-dir=${tmp('ciak-pk-ud-')}`],
+    // CIAK_ASR_MODELS non ha effetto nel pacchetto: il modello deve venire da resources/models
+    env: { ...process.env, NODE_OPTIONS: '', CIAK_ASR_MODELS: '/nonexistent' },
+  });
+  try {
+    const win = await app.firstWindow();
+    const errors = [];
+    win.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
+    win.on('pageerror', (e) => errors.push(e.message));
+    await win.waitForFunction(() => window.__ciak && document.querySelector('.timeline'), null, { timeout: 30000 });
+    assert.equal(await app.evaluate(({ app: a }) => a.isPackaged), true);
+    assert.deepEqual(await win.evaluate(() => window.ciakDesktop.asrAvailable().then((r) => ({ ok: r.ok, reason: r.reason }))), { ok: true, reason: undefined });
+    await win.setInputFiles('#file-input', path.join(ROOT, 'tests', 'fixtures', 'jfk.wav'));
+    await win.waitForSelector('.media-card');
+    const card = win.locator('.media-card').first();
+    await card.hover();
+    await card.locator('.add').click();
+    await win.click('#tab-subtitles');
+    await win.click('#btn-auto-captions');
+    await win.selectOption('#cap-lang', 'en');
+    await win.click('#cap-run');
+    await win.waitForSelector('#cap-list .cap-text', { timeout: 200000 });
+    const all = (await win.locator('#cap-list .cap-text').evaluateAll((els) => els.map((e) => e.value))).join(' ').toLowerCase();
+    for (const w of ['fellow americans', 'ask not', 'your country']) assert.ok(all.includes(w), `manca «${w}» in «${all}»`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    if (copied) rmSync(bundled, { recursive: true, force: true });
   }
 });
