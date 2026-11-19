@@ -1,6 +1,6 @@
 {
   "name": "ciak-studio",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Ciak Studio — editor video non lineare open source che gira nel browser, senza installazione.",
   "type": "module",
   "private": true,
@@ -40,8 +40,7 @@
       "buildResources": "desktop/build"
     },
     "files": [
-      "desktop/main.cjs",
-      "desktop/preload.cjs",
+      "desktop/*.cjs",
       "desktop/build/icon.png",
       "dist/ciak-studio.html",
       "package.json"

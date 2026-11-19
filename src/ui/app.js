@@ -31,6 +31,8 @@ import { layoutClips } from '../core/layouts.js';
 import { applyCameraMove, clearCameraMove } from '../core/camera.js';
 import { applySpeedRamp } from '../core/timeline.js';
 import { cropForAspect, CROP_ASPECTS } from '../core/crop.js';
+import { analyze, autoAdjust, matchColors } from '../core/autocolor.js';
+import { sampleClipFrames } from '../engine/frame-sampler.js';
 import { applyTemplate, parseTemplateFile, serializeTemplate, templateFromProject } from '../core/templates.js';
 import { makeEntry, uniqueName } from '../core/projects.js';
 import { RECORD_MODES, ScreenRecorder, recorderSupported, screenSupported } from '../engine/screen-recorder.js';
@@ -77,6 +79,17 @@ const SHORTCUTS = [
   ['Pulsante Layout', 'Sposta l’anteprima, nascondi pannelli, scegli una disposizione'],
   ['?', 'Questa guida'],
 ];
+
+/** Scrive il risultato di una correzione automatica sul clip, lasciando intatto il resto (LUT, HSL, nitidezza). */
+function applyColorResult(clip, r) {
+  const g = clip.grade;
+  g.exposure = r.grade.exposure;
+  g.highlights = r.grade.highlights;
+  g.shadows = r.grade.shadows;
+  g.curve = [...r.grade.curve];
+  g.wheels.mids = { ...r.grade.wheels.mids };
+  clip.adjust.saturation = r.adjust.saturation;
+}
 
 export class App {
   constructor(root) {
@@ -1002,6 +1015,58 @@ export class App {
         if (!ids.length) return toast('Seleziona prima i clip da disporre (Ctrl o Maiusc + clic per più clip)', { type: 'warn' });
         const r = app.commit('Disposizione', (d) => layoutClips(d, ids, layoutId, { fill }));
         if (r.ok) app.player.settle?.();
+      },
+      /** Correzione automatica dei colori (luminosità, contrasto, dominante, saturazione) dei clip selezionati. */
+      async autoAdjust(amount = 100) {
+        const ids = app.targets({ visual: true }).filter((id) => ['video', 'image'].includes(findClip(app.store.project, id).clip.kind));
+        if (!ids.length) return toast('Seleziona un video o una foto', { type: 'warn' });
+        const t = toast('Analizzo i colori…', { ms: 60000 });
+        try {
+          const results = new Map();
+          for (const id of ids) {
+            const clip = findClip(app.store.project, id).clip;
+            const blob = app.pool.blob(clip.mediaId);
+            if (!blob) throw new Error('il file non è disponibile');
+            results.set(id, autoAdjust(await sampleClipFrames(blob, clip), { amount: amount / 100 }));
+          }
+          app.commit('Correzione automatica', (d) => {
+            for (const [id, r] of results) applyColorResult(findClip(d, id).clip, r);
+          });
+          toast('Colori corretti: puoi ritoccarli nella scheda «Regolazione»', { type: 'success' });
+        } catch (e) {
+          toast(`Correzione non riuscita: ${e.message}`, { type: 'error' });
+        } finally {
+          t.remove();
+        }
+      },
+      /** Uniforma i colori dei clip selezionati a quelli di un altro clip («riferimento»). */
+      async matchColors(refId, amount = 100) {
+        const p = app.store.project;
+        const ref = findClip(p, refId)?.clip;
+        const ids = app.targets({ visual: true }).filter((id) => id !== refId && ['video', 'image'].includes(findClip(p, id).clip.kind));
+        if (!ref) return toast('Scegli il clip da cui copiare i colori', { type: 'warn' });
+        if (!ids.length) return toast('Seleziona il clip da correggere', { type: 'warn' });
+        const t = toast('Confronto i colori…', { ms: 60000 });
+        try {
+          const refBlob = app.pool.blob(ref.mediaId);
+          if (!refBlob) throw new Error('il file del riferimento non è disponibile');
+          const refStats = analyze(await sampleClipFrames(refBlob, ref));
+          const results = new Map();
+          for (const id of ids) {
+            const clip = findClip(p, id).clip;
+            const blob = app.pool.blob(clip.mediaId);
+            if (!blob) throw new Error('il file non è disponibile');
+            results.set(id, matchColors(await sampleClipFrames(blob, clip), refStats, { amount: amount / 100 }));
+          }
+          app.commit('Uniforma i colori', (d) => {
+            for (const [id, r] of results) applyColorResult(findClip(d, id).clip, r);
+          });
+          toast('Colori uniformati al clip scelto', { type: 'success' });
+        } catch (e) {
+          toast(`Non riuscito: ${e.message}`, { type: 'error' });
+        } finally {
+          t.remove();
+        }
       },
       /** Accende o spegne le maniglie di ritaglio sul video selezionato. */
       toggleCropMode() {

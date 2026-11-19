@@ -29,6 +29,9 @@ export function makeMedia() {
   for (const [name, col] of [['red', 'red'], ['blue', 'blue']]) {
     if (!existsSync(f(`${name}.webm`))) run(['-f', 'lavfi', '-i', `color=c=${col}:s=640x360:r=30:d=4`, ...vp8, '-an', f(`${name}.webm`)]);
   }
+  if (!existsSync(f('dark.png'))) run(['-f', 'lavfi', '-i', 'testsrc2=size=640x360', '-frames:v', '1', '-vf', 'eq=brightness=-0.32:contrast=0.45', f('dark.png')]);
+  if (!existsSync(f('cast.png'))) run(['-f', 'lavfi', '-i', 'testsrc2=size=640x360', '-frames:v', '1', '-vf', 'colorchannelmixer=rr=0.65:gg=0.9:bb=1.15', f('cast.png')]);
+  if (!existsSync(f('warm.png'))) run(['-f', 'lavfi', '-i', 'testsrc2=size=640x360', '-frames:v', '1', '-vf', 'colorchannelmixer=rr=1:gg=0.85:bb=0.6,eq=brightness=0.05', f('warm.png')]);
   if (!existsSync(f('mid.webm'))) run(['-f', 'lavfi', '-i', MID, ...vp8, '-an', f('mid.webm')]);
   if (!existsSync(f('mid.png'))) run(['-f', 'lavfi', '-i', MID.replace('s=640x360', 's=800x600').replace(/x=320:y=180:w=320:h=180/, 'x=400:y=300:w=400:h=300').replace('w=320:h=180:color=0x805030', 'w=400:h=300:color=0x805030'), '-frames:v', '1', f('mid.png')]);
   // 5 s con voce (tono) e due pause: 1,0–2,5 s e 3,5–4,5 s
