@@ -13,6 +13,7 @@ import { EASING_LABELS, KEYFRAME_PROPS, removeKeyframeAt, setValueAt, valueAt } 
 import { isVisualKind } from '../core/project.js';
 import { CURVE_POINTS, HSL_BANDS, WHEELS } from '../core/grade.js';
 import { KARAOKE_MODES } from '../core/karaoke.js';
+import { SILENCE_DEFAULTS, findSilences, timelineRanges } from '../core/silence.js';
 
 const TABS = {
   video: [['video', 'Video'], ['audio', 'Audio'], ['speed', 'Velocità'], ['anim', 'Animazione'], ['adjust', 'Regolazione'], ['fx', 'Effetti']],
@@ -30,6 +31,7 @@ const PROP_UNIT = { x: 100, y: 100, scale: 100, rotation: 1, opacity: 100, volum
 export class Inspector {
   #controls = [];
   #hslBand = 'red';
+  #sil = { threshold: SILENCE_DEFAULTS.threshold * 100, minSilence: SILENCE_DEFAULTS.minSilence, keep: SILENCE_DEFAULTS.keep, all: true };
   #key = '';
   #tab = {};
   #lastSync = 0;
@@ -309,6 +311,7 @@ export class Inspector {
         this.#add(toggleControl(this.ctx, { label: 'Silenzia questo clip', get: (c) => c.muted, set: (c, v) => { c.muted = v; } })),
       ]),
     ];
+    out.push(this.#silenceSection());
     if (clip.kind === 'video') {
       out.push(section('Estrazione', [
         h('div', { class: 'btn-row' }, actionButton({ label: 'Estrai audio', icon: 'music', onClick: () => actions.detachAudio() })),
@@ -316,6 +319,53 @@ export class Inspector {
       ]));
     }
     return out;
+  }
+
+  /** Rimozione delle pause: soglia, durata minima e margine; mostra subito quante pause trova. */
+  #silenceSection() {
+    const info = h('p', { class: 'hint', id: 'silence-info' });
+    const update = (clip) => {
+      const c = clip ?? findClip(this.app.store.project, this.clipId)?.clip;
+      const pk = c && this.app.pool.info(c.mediaId);
+      if (!c) return;
+      if (!pk?.peaks) {
+        info.textContent = 'Analisi dell’audio non disponibile (file senza audio o ancora in analisi).';
+        return;
+      }
+      const sil = findSilences(pk.peaks, pk.peaksRate, { from: c.in, to: c.in + c.duration * c.speed, threshold: this.#sil.threshold / 100, minSilence: this.#sil.minSilence, keep: this.#sil.keep });
+      const rs = timelineRanges(this.app.store.project, c, sil);
+      const total = rs.reduce((s, r) => s + (r.end - r.start), 0);
+      info.textContent = rs.length ? `Trovate ${rs.length} pause per ${total.toFixed(1)} s in totale.` : 'Nessuna pausa trovata con queste impostazioni.';
+      info.dataset.count = String(rs.length);
+    };
+    const local = (label, key, min, max, step, unit, decimals = 0) => {
+      const range = h('input', { type: 'range', min, max, step, 'aria-label': label });
+      const num = h('input', { type: 'number', class: 'num', min, max, step, 'aria-label': `${label} (valore)` });
+      const set = (v) => {
+        const n = clamp(Number(v), min, max);
+        if (!Number.isFinite(n)) return;
+        this.#sil[key] = n;
+        range.value = String(n);
+        if (document.activeElement !== num) num.value = String(Number(n.toFixed(decimals)));
+        update();
+      };
+      range.value = String(this.#sil[key]);
+      num.value = String(Number(this.#sil[key].toFixed(decimals)));
+      range.addEventListener('input', () => set(range.value));
+      num.addEventListener('change', () => set(num.value));
+      return h('div', { class: 'ctl slider' }, h('label', { class: 'ctl-label' }, label), range, h('span', { class: 'num-wrap' }, num, h('span', { class: 'unit' }, unit)));
+    };
+    const all = h('input', { type: 'checkbox', id: 'silence-all', checked: this.#sil.all, 'aria-label': 'Taglia anche le altre tracce' });
+    all.addEventListener('change', () => { this.#sil.all = all.checked; });
+    this.#controls.push({ el: info, sync: (c) => update(c) });
+    return section('Pause (silenzi)', [
+      local('Silenzio sotto', 'threshold', 1, 30, 1, '%'),
+      local('Pausa minima', 'minSilence', 0.2, 3, 0.1, 's', 1),
+      local('Margine da lasciare', 'keep', 0, 0.5, 0.01, 's', 2),
+      h('label', { class: 'ctl toggle' }, all, h('span', { class: 'switch' }), h('span', { class: 'ctl-label' }, 'Taglia anche le altre tracce (restano sincronizzate)')),
+      info,
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', id: 'btn-remove-silence', onClick: () => this.app.actions.removeSilences({ clipId: this.clipId, ...this.#sil }) }, icon('scissors', 14), 'Rimuovi le pause')),
+    ], { open: false });
   }
 
   #speedTab(clip) {

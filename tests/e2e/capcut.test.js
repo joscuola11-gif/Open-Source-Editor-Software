@@ -360,3 +360,42 @@ test('karaoke: il colore di evidenza avanza sul testo durante il clip; si regola
     assert.ok(await page.getByText('Colora le parole mentre si dicono').isVisible());
   });
 });
+
+test('pause: l\'analisi dell\'audio le trova, mostra quante sono e le toglie da video e audio insieme', async () => {
+  await withApp(async ({ page }) => {
+    await importFiles(page, [m.f('pause.webm')]); // 5 s: voce, pausa 1–2,5, voce, pausa 3,5–4,5
+    await addMedia(page, 0);
+    await page.locator('.clip.kind-video').first().click();
+    await inspectorTab(page, 'Audio');
+    await page.locator('details.section summary', { hasText: 'Pause' }).click();
+    await page.waitForFunction(() => /Trovate 2 pause/.test(document.querySelector('#silence-info')?.textContent ?? ''), null, { timeout: 15000 });
+    const info = await page.textContent('#silence-info');
+    const secs = Number(/per ([\d.]+) s/.exec(info)[1]);
+    assert.ok(secs > 1.7 && secs < 2.3, `pause trovate per circa 2 s (${info})`);
+
+    // soglia o durata minima troppo severe: niente da togliere
+    await page.locator('input[aria-label="Pausa minima (valore)"]').fill('3');
+    await page.locator('input[aria-label="Pausa minima (valore)"]').press('Enter');
+    await page.waitForFunction(() => /Nessuna pausa/.test(document.querySelector('#silence-info')?.textContent ?? ''));
+    await page.click('#btn-remove-silence');
+    await page.waitForFunction(() => [...document.querySelectorAll('.toast')].some((t) => /Nessuna pausa/.test(t.textContent)));
+    assert.equal((await clips(page)).length, 1, 'nulla è cambiato');
+    await page.locator('input[aria-label="Pausa minima (valore)"]').fill('0.6');
+    await page.locator('input[aria-label="Pausa minima (valore)"]').press('Enter');
+    await page.waitForFunction(() => /Trovate 2 pause/.test(document.querySelector('#silence-info')?.textContent ?? ''));
+
+    const before = (await clips(page))[0].duration;
+    await page.click('#btn-remove-silence');
+    await page.waitForFunction(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).filter((c) => c.kind === 'video').length === 3, null, { timeout: 8000 });
+    const cs = (await clips(page)).filter((c) => c.kind === 'video').sort((a, b) => a.start - b.start);
+    const total = cs.reduce((s, c) => s + c.duration, 0);
+    near(before - total, secs, 0.1, 'tolto quanto annunciato');
+    // niente buchi: i pezzi si toccano
+    near(cs[1].start, cs[0].start + cs[0].duration, 0.04);
+    near(cs[2].start, cs[1].start + cs[1].duration, 0.04);
+    // un solo passo di annullamento
+    await page.click('#btn-undo');
+    assert.equal((await clips(page)).filter((c) => c.kind === 'video').length, 1);
+    near((await clips(page))[0].duration, before, 0.01);
+  });
+});

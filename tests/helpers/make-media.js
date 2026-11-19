@@ -28,6 +28,9 @@ export function makeMedia() {
   const MID = 'color=c=0x606060:s=640x360:r=30:d=3,drawbox=x=0:y=0:w=320:h=180:color=0x805030:t=fill,drawbox=x=320:y=180:w=320:h=180:color=0x305080:t=fill';
   if (!existsSync(f('mid.webm'))) run(['-f', 'lavfi', '-i', MID, ...vp8, '-an', f('mid.webm')]);
   if (!existsSync(f('mid.png'))) run(['-f', 'lavfi', '-i', MID.replace('s=640x360', 's=800x600').replace(/x=320:y=180:w=320:h=180/, 'x=400:y=300:w=400:h=300').replace('w=320:h=180:color=0x805030', 'w=400:h=300:color=0x805030'), '-frames:v', '1', f('mid.png')]);
+  // 5 s con voce (tono) e due pause: 1,0–2,5 s e 3,5–4,5 s
+  if (!existsSync(f('pause.webm')))
+    run(['-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=5', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5', '-af', "volume=enable='between(t,1,2.5)+between(t,3.5,4.5)':volume=0", ...vp8, '-c:a', 'libopus', '-shortest', f('pause.webm')]);
   if (!existsSync(f('tone.wav'))) run(['-f', 'lavfi', '-i', 'sine=frequency=660:duration=3', f('tone.wav')]);
   if (!existsSync(f('photo.png'))) run(['-f', 'lavfi', '-i', 'testsrc=size=800x600', '-frames:v', '1', f('photo.png')]);
   if (!existsSync(f('subs.srt')))

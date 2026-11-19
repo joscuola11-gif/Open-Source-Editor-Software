@@ -12,6 +12,7 @@ import { removeKeyframeAt, toggleKeyframe, valueAt, setValueAt } from '../core/k
 import { ASPECTS, EFFECTS, EXPORT_SIZES, TEXT_PRESETS } from '../core/presets.js';
 import { formatSrt } from '../core/srt.js';
 import { MIME, SUBTITLE_FORMATS, WRITERS, parseSubtitles } from '../core/subtitles.js';
+import { findSilences, removeSilences } from '../core/silence.js';
 import { defaultGrade, encodeLut, parseCube } from '../core/grade.js';
 import { unzipStore, zipStore } from '../core/zip.js';
 import { AudioEngine } from '../engine/audio-engine.js';
@@ -974,6 +975,17 @@ export class App {
         if (!plan) return toast('Non si possono spostare così: uscirebbero dalla timeline', { type: 'warn' });
         const r = app.commit('Sposta sottotitoli', (d) => moveClips(d, ids, plan.delta, plan.offset));
         if (r.ok && Math.abs(plan.delta - delta) > 0.01) toast(`Spostati di ${plan.delta.toFixed(2)} s (il resto non era possibile)`, { type: 'info' });
+      },
+      /** Toglie le pause (silenzi) dal clip: dall'inviluppo audio già calcolato, senza rielaborare il file. */
+      removeSilences({ clipId, threshold, minSilence, keep, all = true }) {
+        const f = findClip(app.store.project, clipId ?? app.inspector.clipId);
+        if (!f) return;
+        const info = app.pool.info(f.clip.mediaId);
+        if (!info?.peaks) return toast('Questo file non ha un audio analizzabile (o l’analisi non è ancora finita).', { type: 'warn' });
+        const sil = findSilences(info.peaks, info.peaksRate, { from: f.clip.in, to: f.clip.in + f.clip.duration * f.clip.speed, threshold: threshold / 100, minSilence, keep });
+        if (!sil.length) return toast('Nessuna pausa trovata con queste impostazioni.', { type: 'warn' });
+        const r = app.commit('Rimuovi le pause', (d) => removeSilences(d, f.clip.id, sil, { trackIds: all ? null : [f.track.id] }));
+        if (r.ok) toast(`Tolte ${r.result.cuts} pause (${r.result.removed.toFixed(1)} s).`, { type: 'success' });
       },
       /** «Modifica da trascrizione»: toglie dal video, da tutte le tracce, l'intervallo di un sottotitolo e chiude il buco. */
       cutSubtitle(id) {
