@@ -446,6 +446,25 @@ export function splitClip(p, id, t) {
   return right;
 }
 
+/**
+ * Elimina la parte di clip a sinistra o a destra di `t` (come «Q» e «W» di CapCut). Il resto non si sposta.
+ * `side`: 'left' toglie ciò che sta prima di `t`, 'right' ciò che sta dopo.
+ */
+export function trimToTime(p, id, side, t) {
+  if (side !== 'left' && side !== 'right') throw new EditError('Lato non valido');
+  const { track, clip } = requireClip(p, id);
+  requireUnlocked(track);
+  if (!isNum(t)) throw new EditError('Tempo non valido');
+  const md = minDur(p);
+  if (t < clip.start + md - TOL || t > clipEnd(clip) - md + TOL) throw new EditError('Posiziona la testina dentro il clip, lontano dai bordi');
+  // un vicino o una transizione può impedire di arrivare fin lì: meglio rifiutare (senza toccare nulla) che tagliare altrove
+  const edge = side === 'left' ? 'start' : 'end';
+  const { min, max } = trimBounds(p, id, edge);
+  if (t < min - TOL || t > max + TOL) throw new EditError('Qui non si può tagliare: c\'è una transizione o un altro clip vicino');
+  trimClip(p, id, edge, t);
+  return clip;
+}
+
 export function deleteClips(p, ids) {
   const idSet = new Set(ids);
   let n = 0;

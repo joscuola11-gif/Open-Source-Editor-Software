@@ -73,6 +73,8 @@ export class TimelineView {
       btn('redo', 'Ripeti (Ctrl+Maiusc+Z)', () => a.actions.redo(), { id: 'btn-redo' }),
       h('span', { class: 'tb-sep' }),
       btn('scissors', 'Dividi alla testina (S)', () => a.actions.split(), { id: 'btn-split' }),
+      btn('trimLeft', 'Elimina a sinistra della testina (Q)', () => a.actions.trimSide('left'), { id: 'btn-trim-left' }),
+      btn('trimRight', 'Elimina a destra della testina (W)', () => a.actions.trimSide('right'), { id: 'btn-trim-right' }),
       btn('trash', 'Elimina (Canc)', () => a.actions.deleteSelected(), { id: 'btn-delete' }),
       btn('ripple', 'Elimina e chiudi lo spazio (Maiusc+Canc)', () => a.actions.rippleDeleteSelected(), { id: 'btn-ripple' }),
       btn('copy', 'Duplica (Ctrl+D)', () => a.actions.duplicate(), { id: 'btn-duplicate' }),
@@ -728,6 +730,8 @@ export class TimelineView {
       const isVideo = f?.clip.kind === 'video';
       contextMenu(e.clientX, e.clientY, [
         { label: 'Dividi alla testina', icon: 'scissors', shortcut: 'S', onClick: () => a.actions.split() },
+        { label: 'Elimina a sinistra della testina', icon: 'trimLeft', shortcut: 'Q', onClick: () => a.actions.trimSide('left') },
+        { label: 'Elimina a destra della testina', icon: 'trimRight', shortcut: 'W', onClick: () => a.actions.trimSide('right') },
         { label: 'Duplica', icon: 'copy', shortcut: 'Ctrl+D', onClick: () => a.actions.duplicate() },
         { label: 'Copia', shortcut: 'Ctrl+C', onClick: () => a.actions.copy() },
         { label: 'Taglia', shortcut: 'Ctrl+X', onClick: () => a.actions.cut() },

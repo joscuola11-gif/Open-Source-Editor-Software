@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Store } from '../../src/core/store.js';
 import {
   addMarker, addMediaClip, addTrack, copyClips, deleteClips, duplicateClips, insertFreezeFrame, moveClips, moveTrack,
-  pasteClips, planMove, removeTrack, rippleDelete, setSpeed, setTransition, splitClip, trimClip, validateProject, allClips,
+  pasteClips, planMove, removeTrack, rippleDelete, setSpeed, setTransition, splitClip, trimClip, trimToTime, validateProject, allClips,
   clipEnd,
 } from '../../src/core/timeline.js';
 import { upsertKeyframe } from '../../src/core/keyframes.js';
@@ -80,6 +80,11 @@ function runFuzz(seed, steps) {
       const c = randomClip();
       if (!c) return { ok: true, skipped: true };
       return store.commit('split', (p) => splitClip(p, c.id, c.start + r() * c.duration));
+    },
+    trimTime: () => {
+      const c = randomClip();
+      if (!c) return { ok: true, skipped: true };
+      return store.commit('trimTime', (p) => trimToTime(p, c.id, pick(['left', 'right']), c.start + r() * c.duration));
     },
     del: () => store.commit('del', (p) => deleteClips(p, randomSel())),
     ripple: () => store.commit('ripple', (p) => rippleDelete(p, randomSel())),

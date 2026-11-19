@@ -6,7 +6,7 @@ import { DEFAULT_TEXT_DURATION, createClip, createProject, isVisualKind, trackTy
 import {
   addClip, addMarker, addMediaClip, addTrack, allClips, clipEnd, copyClips, deleteClips, duplicateClips, findClip, insertFreezeFrame,
   moveTrack, normalizeProject, pasteClips, projectDuration, removeMarker, removeMedia, removeTrack, rippleDelete, setTransition,
-  snapPoints, splitClip, trackWithRoom,
+  snapPoints, splitClip, trackWithRoom, trimToTime,
 } from '../core/timeline.js';
 import { removeKeyframeAt, toggleKeyframe, valueAt, setValueAt } from '../core/keyframes.js';
 import { ASPECTS, EFFECTS, EXPORT_SIZES, TEXT_PRESETS } from '../core/presets.js';
@@ -42,6 +42,7 @@ const SHORTCUTS = [
   ['↑ / ↓', 'Vai al taglio precedente / successivo'],
   ['Home / Fine', 'Vai all’inizio / alla fine'],
   ['S', 'Dividi alla testina'],
+  ['Q / W', 'Elimina la parte a sinistra / a destra della testina'],
   ['Canc', 'Elimina · Maiusc+Canc: elimina e chiudi lo spazio'],
   ['Ctrl+Z / Ctrl+Maiusc+Z', 'Annulla / Ripeti'],
   ['Ctrl+C / X / V', 'Copia / Taglia / Incolla alla testina'],
@@ -354,6 +355,10 @@ export class App {
         return done(), a.seekEnd();
       case 's':
         return done(), a.split();
+      case 'q':
+        return done(), a.trimSide('left');
+      case 'w':
+        return done(), a.trimSide('right');
       case 'Delete':
       case 'Backspace':
         return done(), e.shiftKey ? a.rippleDeleteSelected() : a.deleteSelected();
@@ -551,6 +556,34 @@ export class App {
             }
           }
           if (!n) throw last ?? new EditError('Impossibile dividere');
+        });
+      },
+      /** Elimina la parte a sinistra («Q») o a destra («W») della testina dei clip selezionati (o sotto la testina). */
+      trimSide(side) {
+        const { store, selection, player } = app;
+        const t = quantize(player.time, store.project.settings.fps);
+        const p = store.project;
+        let ids = selection.ids.filter((id) => {
+          const c = findClip(p, id)?.clip;
+          return c && t > c.start && t < clipEnd(c);
+        });
+        if (!ids.length) {
+          ids = allClips(p).filter((c) => t > c.start && t < clipEnd(c) && !findClip(p, c.id).track.locked && !findClip(p, c.id).track.hidden).map((c) => c.id);
+        }
+        if (!ids.length) return toast('Posiziona la testina dentro un clip', { type: 'warn' });
+        app.commit(side === 'left' ? 'Elimina a sinistra della testina' : 'Elimina a destra della testina', (d) => {
+          let n = 0;
+          let last = null;
+          for (const id of ids) {
+            try {
+              trimToTime(d, id, side, t);
+              n++;
+            } catch (e) {
+              if (!(e instanceof EditError)) throw e;
+              last = e;
+            }
+          }
+          if (!n) throw last ?? new EditError('Impossibile tagliare');
         });
       },
       deleteSelected() {

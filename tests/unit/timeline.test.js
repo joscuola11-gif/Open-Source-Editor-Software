@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   addClip, addMediaClip, addTrack, clipEnd, deleteClips, duplicateClips, findFreeStart, insertFreezeFrame, moveClips,
   planMove, pasteClips, copyClips, rippleDelete, setSpeed, setTransition, snapPoints, snapValue, splitClip, trimBounds,
-  trimClip, validateProject, repairTrack, normalizeProject, removeMedia, moveTrack, removeTrack, projectDuration,
+  trimClip, trimToTime, validateProject, repairTrack, normalizeProject, removeMedia, moveTrack, removeTrack, projectDuration,
 } from '../../src/core/timeline.js';
 import { upsertKeyframe, valueAt } from '../../src/core/keyframes.js';
 import { EditError } from '../../src/core/util.js';
@@ -372,5 +372,62 @@ test('addMediaClip accoda sulla stessa traccia se lo scostamento è minimo, altr
   const far = addMediaClip(p, p.media.v2, { start: 12 });    // occupato per intero → altra traccia
   assert.notEqual(p.tracks.find((x) => x.clips.includes(far)).id, t);
   assert.ok(SLOT_TOLERANCE > 0 && SLOT_TOLERANCE < 0.5);
+  mustBeValid(p);
+});
+
+test('trimToTime: toglie la parte a sinistra o a destra della testina senza spostare il resto', () => {
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  const c = put(p, t, 'v1', 2); // 2..12, sorgente 0..10
+  trimToTime(p, c.id, 'left', 5);
+  near(c.start, 5);
+  near(c.duration, 7);
+  near(c.in, 3, 1e-6); // la sorgente avanza di 3 s: il contenuto non scorre
+  near(clipEnd(c), 12);
+  trimToTime(p, c.id, 'right', 9);
+  near(c.start, 5);
+  near(c.duration, 4);
+  near(c.in, 3);
+  mustBeValid(p);
+});
+
+test('trimToTime: con velocità diversa da 1 la sorgente avanza in proporzione', () => {
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  const c = put(p, t, 'v1', 0);
+  setSpeed(p, c.id, 2); // 5 s di timeline per 10 s di sorgente
+  near(c.duration, 5);
+  trimToTime(p, c.id, 'left', 2);
+  near(c.in, 4, 1e-6);
+  near(c.duration, 3);
+  mustBeValid(p);
+});
+
+test('trimToTime: rifiuta punti fuori o troppo vicini ai bordi, tracce bloccate e valori assurdi', () => {
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  const c = put(p, t, 'v1', 0);
+  for (const at of [-1, 0, 0.001, 9.999, 10, 50]) assert.throws(() => trimToTime(p, c.id, 'left', at), EditError, `t=${at}`);
+  assert.throws(() => trimToTime(p, c.id, 'mezzo', 5), EditError);
+  assert.throws(() => trimToTime(p, c.id, 'left', NaN), EditError);
+  assert.throws(() => trimToTime(p, 'inesistente', 'left', 5), EditError);
+  p.tracks.find((x) => x.id === t).locked = true;
+  assert.throws(() => trimToTime(p, c.id, 'right', 5), EditError);
+  near(c.duration, 10, 1e-9);
+});
+
+test('trimToTime: rifiuta di tagliare dentro una transizione invece di tagliare altrove', () => {
+  const p = baseProject();
+  const t = videoTrackId(p, 2);
+  const a = put(p, t, 'v1', 0); // 0..10
+  const b = put(p, t, 'v2', 10); // 10..16
+  setTransition(p, b.id, { type: 'fade', duration: 2 }); // b parte a 8 e si sovrappone ad a
+  const before = structuredClone(p);
+  assert.throws(() => trimToTime(p, a.id, 'left', 9.5), EditError, 'a sinistra di a, oltre l\'inizio di b');
+  assert.deepEqual(p.tracks, before.tracks, 'nessuna modifica parziale');
+  assert.equal(a.duration, 10, 'a non è stato toccato');
+  // dove c'è posto invece si può: a destra di a, prima dell'inizio della transizione
+  trimToTime(p, a.id, 'right', 9);
+  near(clipEnd(a), 9);
   mustBeValid(p);
 });

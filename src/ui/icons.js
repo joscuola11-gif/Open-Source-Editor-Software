@@ -9,6 +9,8 @@ const P = {
   stepFwd: '<polyline points="9 18 15 12 9 6"/>',
   undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/>',
   redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/>',
+  trimLeft: '<path d="M4 4v16"/><path d="M8 12h12"/><path d="M12 8l-4 4 4 4"/><rect x="14" y="7" width="6" height="10" rx="1" opacity=".5"/>',
+  trimRight: '<path d="M20 4v16"/><path d="M4 12h12"/><path d="M12 8l4 4-4 4"/><rect x="4" y="7" width="6" height="10" rx="1" opacity=".5"/>',
   scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.1" y2="15.9"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.1" y1="8.1" x2="12" y2="12"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>',
   ripple: '<path d="M3 12h4M17 12h4"/><path d="M10 7l-4 5 4 5M14 7l4 5-4 5"/>',
