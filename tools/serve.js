@@ -17,6 +17,7 @@ const MIME = {
   '.webm': 'video/webm',
   '.mp4': 'video/mp4',
   '.wav': 'audio/wav',
+  '.wasm': 'application/wasm',
   '.srt': 'text/plain; charset=utf-8',
 };
 

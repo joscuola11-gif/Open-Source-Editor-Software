@@ -81,9 +81,15 @@ test('desktop: navigazione esterna e popup bloccati', { skip }, async () => {
     assert.equal(opened, true, 'window.open è bloccato');
     await win.waitForTimeout(300);
     assert.equal(app.windows().length, 1);
-    // la CSP impedisce ogni connessione di rete dalla pagina
+    // il programma blocca ogni connessione di rete della pagina (anche se la CSP della versione browser ne ammette alcune)
     const net = await win.evaluate(() => fetch('https://example.com/').then(() => 'raggiunto', () => 'bloccato'));
     assert.equal(net, 'bloccato');
+    for (const url of ['https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.min.js', 'https://huggingface.co/Xenova/whisper-tiny/resolve/main/config.json']) {
+      const r = await win.evaluate((u) => fetch(u).then(() => 'raggiunto', () => 'bloccato'), url);
+      assert.equal(r, 'bloccato', url);
+    }
+    const imported = await win.evaluate(() => import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.min.js').then(() => 'caricato', () => 'bloccato'));
+    assert.equal(imported, 'bloccato');
     assert.ok(errors.every((e) => /Content Security Policy|Failed to fetch|ERR_|violat/i.test(e)), errors.join('\n'));
   } finally {
     await app.close();
@@ -601,6 +607,45 @@ test('desktop: «Voce da testo» trasforma un testo in un clip audio con la voce
     await win.click('button[data-act="tts-add"]');
     await win.waitForFunction(() => /Scrivi il testo/.test(document.querySelector('#tts-status')?.textContent ?? ''));
     assert.equal(await win.locator('.clip').count(), 1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+const ASR_MODELS = process.env.CIAK_ASR_MODELS || path.join(ROOT, 'node_modules', 'sts-whisper-tiny', 'models');
+const haveAsr = existsSync(path.join(ASR_MODELS, 'Xenova', 'whisper-tiny', 'onnx', 'encoder_model_quantized.onnx')) ? false : 'modello non installato (npm i -D sts-whisper-tiny)';
+
+test('desktop: «Sottotitoli automatici» con Whisper vero nel processo principale (voce umana vera)', { skip: skip || haveAsr, timeout: 240000 }, async () => {
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_ASR_MODELS: ASR_MODELS });
+  try {
+    const av = await win.evaluate(() => window.ciakDesktop.asrAvailable());
+    assert.equal(av.ok, true, JSON.stringify(av));
+    assert.deepEqual(Object.keys(av.models), ['tiny', 'base', 'small']);
+    assert.ok(av.languages.includes('it') && av.languages.includes('en'));
+    // richiesta sbagliata: errore comprensibile, nessuna eccezione
+    const bad = await win.evaluate(() => window.ciakDesktop.asrTranscribe(new Float32Array(16000), { language: 'xx', model: 'tiny' }));
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /Lingua non supportata/);
+    await win.setInputFiles('#file-input', path.join(ROOT, 'tests', 'fixtures', 'jfk.wav'));
+    await win.waitForSelector('.media-card');
+    const card = win.locator('.media-card').first();
+    await card.hover();
+    await card.locator('.add').click();
+    await win.click('#tab-subtitles');
+    await win.click('#btn-auto-captions');
+    await win.waitForSelector('#captions-dialog');
+    await win.selectOption('#cap-lang', 'en');
+    await win.click('#cap-run');
+    await win.waitForSelector('#cap-list .cap-text', { timeout: 200000 });
+    const texts = await win.locator('#cap-list .cap-text').evaluateAll((els) => els.map((e) => e.value));
+    const all = texts.join(' ').toLowerCase();
+    for (const w of ['fellow americans', 'ask not', 'your country', 'do for you']) assert.ok(all.includes(w), `manca «${w}» in «${all}»`);
+    await win.click('#cap-add');
+    await win.waitForSelector('#captions-dialog', { state: 'detached' });
+    const subs = await win.evaluate(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).filter((c) => c.role === 'subtitle').sort((a, b) => a.start - b.start).map((c) => ({ start: c.start, d: c.duration, t: c.text.content })));
+    assert.equal(subs.length, texts.length);
+    assert.ok(subs[0].start > 0.1 && subs[0].start < 0.6, `parte quando inizia la voce: ${subs[0].start}`);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

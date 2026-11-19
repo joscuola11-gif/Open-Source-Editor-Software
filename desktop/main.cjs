@@ -56,6 +56,9 @@ function saveState(win) {
 const ours = (url) => typeof url === 'string' && url.startsWith('file://') && url.split('#')[0].split('?')[0] === APP_URL;
 
 function hardenSession(ses) {
+  // La pagina non deve poter raggiungere la rete: la versione per browser scarica il riconoscimento vocale da internet,
+  // qui lo fa il processo principale (desktop/asr.cjs). Si blocca ogni richiesta che non sia un file locale.
+  ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !/^(file|blob|data|devtools|chrome-extension):/i.test(details.url) }));
   const allowed = new Set(['media', 'display-capture', 'fullscreen']);
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => callback(allowed.has(permission) && ours(details.requestingUrl)));
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => allowed.has(permission) && (ours(details?.requestingUrl) || requestingOrigin === 'file://'));

@@ -13,7 +13,7 @@ export const ASR_LANGUAGES = { it: 'Italiano', en: 'Inglese', es: 'Spagnolo', fr
 
 const WEB_MODELS = { tiny: 'Xenova/whisper-tiny', base: 'Xenova/whisper-base', small: 'Xenova/whisper-small' };
 export const TRANSFORMERS_VERSION = '4.3.2';
-const DEFAULT_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_VERSION}/dist/transformers.web.min.js`;
+const DEFAULT_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_VERSION}/dist/transformers.min.js`;
 
 /** Motore del programma per computer (Whisper locale). `null` se il ponte non c'è. */
 export function desktopEngine(bridge = globalThis.ciakDesktop, { model = 'tiny', onModelProgress = () => {} } = {}) {
@@ -24,7 +24,7 @@ export function desktopEngine(bridge = globalThis.ciakDesktop, { model = 'tiny',
     model,
     async available() {
       const r = await bridge.asrAvailable();
-      return { ok: Boolean(r?.ok), reason: r?.reason ?? '', models: r?.models ?? ASR_MODELS, languages: r?.languages ?? ASR_LANGUAGES };
+      return { ok: Boolean(r?.ok), reason: r?.reason ?? '', models: r?.models ?? ASR_MODELS, languages: ASR_LANGUAGES };
     },
     async transcribe(samples, { language = 'it', signal } = {}) {
       if (signal?.aborted) throw new Error('Operazione annullata.');
@@ -61,7 +61,10 @@ export function webEngine({ model = 'tiny', onModelProgress = () => {}, override
     } else T.env.allowLocalModels = false;
     T.env.allowRemoteModels = overrides.allowRemote ?? !overrides.localModelPath;
     if (overrides.wasmPaths && T.env.backends?.onnx?.wasm) T.env.backends.onnx.wasm.wasmPaths = overrides.wasmPaths;
-    if (T.env.backends?.onnx?.wasm) T.env.backends.onnx.wasm.numThreads = 1;
+    if (T.env.backends?.onnx?.wasm) {
+      T.env.backends.onnx.wasm.numThreads = 1;
+      T.env.backends.onnx.wasm.proxy = overrides.proxy ?? true;
+    }
     return T;
   }
   function pipe() {
