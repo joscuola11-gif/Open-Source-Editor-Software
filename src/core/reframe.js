@@ -3,12 +3,6 @@
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
-function lum(frame) {
-  const n = frame.w * frame.h;
-  const g = new Float32Array(n);
-  for (let i = 0, p = 0; i < n; i++, p += 4) g[i] = 0.299 * frame.data[p] + 0.587 * frame.data[p + 1] + 0.114 * frame.data[p + 2];
-  return g;
-}
 
 function blur3(src, w, h) {
   const out = new Float32Array(src.length);
@@ -57,11 +51,10 @@ function centroid(map, w, h, thr) {
  */
 export function subjectCenters(frames) {
   const out = [];
-  let prevL = null;
+  let prev = null;
   let last = { x: 0.5, y: 0.5 };
   for (const f of frames) {
     const { w, h } = f;
-    const L = lum(f);
     // salienza statica: distanza dal colore medio
     let mr = 0;
     let mg = 0;
@@ -74,9 +67,10 @@ export function subjectCenters(frames) {
     const salB = blur3(sal, w, h);
     let center = null;
     let strength = 0;
-    if (prevL) {
+    if (prev && prev.w === w && prev.h === h) {
+      // cambiamento di colore (non solo di luminosità: un oggetto rosso su grigio ha la stessa luminosità)
       const mot = new Float32Array(n);
-      for (let i = 0; i < n; i++) mot[i] = Math.abs(L[i] - prevL[i]);
+      for (let i = 0, p = 0; i < n; i++, p += 4) mot[i] = (Math.abs(f.data[p] - prev.data[p]) + Math.abs(f.data[p + 1] - prev.data[p + 1]) + Math.abs(f.data[p + 2] - prev.data[p + 2])) / 3;
       const motB = blur3(mot, w, h);
       const noise = percentile(motB, 0.5);
       const thr = Math.max(8, noise * 4, percentile(motB, 0.92));
@@ -86,11 +80,11 @@ export function subjectCenters(frames) {
     if (!center) {
       // fermo: ciò che spicca per colore (solo se davvero distinto)
       const c = centroid(salB, w, h, Math.max(percentile(salB, 0.97) * 0.8, 40));
-      if (c && !prevL) center = c;
+      if (c && !prev) center = c;
     }
     if (center) last = { x: center.x, y: center.y };
     out.push({ t: f.t, x: last.x, y: last.y, strength });
-    prevL = L;
+    prev = f;
   }
   return out;
 }
@@ -155,7 +149,7 @@ export function reframeKeyframes(centers, { srcAspect, canvasAspect, zoom = 1, t
   const dw = fitW * scale; // larghezza mostrata, in canvas
   const dh = fitH * scale;
   const vis = { x: Math.min(1, 1 / dw), y: Math.min(1, 1 / dh) };
-  const pts = centers.map((c) => ({ t: c.t, x: -(clamp(c.x, vis.x / 2, 1 - vis.x / 2) - 0.5) * dw, y: -(clamp(c.y, vis.y / 2, 1 - vis.y / 2) - 0.5) * dh }));
+  const pts = centers.map((c) => ({ t: c.t, x: -(clamp(c.x, vis.x / 2, 1 - vis.x / 2) - 0.5) * dw + 0, y: -(clamp(c.y, vis.y / 2, 1 - vis.y / 2) - 0.5) * dh + 0 }));
   const kept = simplify(pts, tolerance);
   const mk = (key) => kept.map((p) => ({ t: p.t, v: p[key], e: 'linear' }));
   return {
