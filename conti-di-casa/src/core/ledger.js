@@ -64,6 +64,8 @@ const clean = (tx) => {
     delete t.divisione;
   } else delete t.contoA;
   for (const k of ['categoriaId', 'membroId', 'contoA', 'ricorrenteId']) if (t[k] === '' || t[k] == null) delete t[k];
+  for (const k of Object.keys(t)) if (t[k] === undefined || t[k] === null) delete t[k]; // «togliere» un campo = passarlo null/undefined
+  if (Array.isArray(t.tag) && !t.tag.length) delete t.tag;
   t.descrizione = (t.descrizione ?? '').trim();
   t.note = (t.note ?? '').trim();
   return t;
