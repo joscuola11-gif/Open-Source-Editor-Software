@@ -73,6 +73,16 @@ export function build() {
     lines.push(`===== ${p.name} ${l.version} (${l.license}) =====`);
     lines.push(l.text || `(il pacchetto non include un file di licenza: la licenza dichiarata è ${l.license}; vedi ${p.url})`);
   }
+  lines.push('');
+  lines.push('===== LAME (alla base di lamejs) — riconoscimento richiesto dal progetto LAME =====');
+  lines.push('Il codificatore MP3 è LAME (https://lame.sourceforge.net), portato in JavaScript da lamejs. Ciak Studio lo usa sotto i termini della LGPL; se modifichi LAME,');
+  lines.push('le modifiche vanno restituite al progetto LAME sotto la stessa licenza.');
+  lines.push('');
+  lines.push('===== GNU Lesser General Public License v3.0 (testo completo, per lamejs/LAME) =====');
+  lines.push(readFileSync(path.join(ROOT, 'docs', 'licenze', 'LGPL-3.0.txt'), 'utf8').trim());
+  lines.push('');
+  lines.push('===== Apache License 2.0 (testo completo, per transformers.js, tokenizers, MediaPipe) =====');
+  lines.push(readFileSync(path.join(ROOT, 'docs', 'licenze', 'Apache-2.0.txt'), 'utf8').trim());
   return `${lines.join('\n')}\n`;
 }
 
