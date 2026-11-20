@@ -49,7 +49,7 @@ async function persist() {
 function scheduleSave() {
   dirty = true;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(persist, 250);
+  saveTimer = setTimeout(persist, 120);
 }
 export const flush = persist;
 
@@ -73,6 +73,7 @@ export function setup({ famiglia, membro, valuta = 'EUR', conti = [] }) {
   }
   state = s;
   scheduleSave();
+  void persist();
   notify();
 }
 
@@ -113,6 +114,7 @@ export function adopt(next) {
   state = sanitizeState(next);
   undoStack.length = 0;
   scheduleSave();
+  void persist();
   notify();
 }
 

@@ -220,8 +220,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); outline:
 .toast-action { background: none; border: 0; color: #9be8c3; font-weight: 700; padding: 6px 4px; white-space: nowrap; }
 
 /* ---- grafici ---- */
-.cat-mini { display: flex; align-items: center; gap: 14px; }
-.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; flex: 1; min-width: 0; }
+.cat-mini { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; flex: 1 1 170px; min-width: 0; }
 .legend li { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; }
 .legend-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend.inline { display: flex; gap: 14px; justify-content: center; color: var(--muted); }

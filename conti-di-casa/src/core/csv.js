@@ -1,6 +1,6 @@
 // CSV: per aprire i movimenti in Excel e per importare gli estratti conto della banca.
 
-const NEEDS_QUOTES = /[";\n\r,\t|]|^\s|\s$/;
+const NEEDS_QUOTES = /["\n\r]|^\s|\s$/;
 
 /** Una cella di testo libero: se comincia come una formula, Excel la eseguirebbe: la si disinnesca con un apice. */
 export function safeText(v) {
