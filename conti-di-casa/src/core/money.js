@@ -34,7 +34,7 @@ export function parseAmount(input) {
     const sep = dots ? '.' : ',';
     const n = dots || commas;
     const parts = s.split(sep);
-    const last = parts.at(-1);
+    const last = parts[parts.length - 1];
     if (n > 1) {
       // «1.234.567»: solo migliaia
       if (!thousandsRe(sep).test(s)) return null;

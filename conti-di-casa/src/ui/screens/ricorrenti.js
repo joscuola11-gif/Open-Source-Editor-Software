@@ -93,11 +93,13 @@ function skip(recId, date) {
 export function render() {
   const s = getState();
   const t = today();
+  const all0 = upcoming(s, t, 60);
+  // scadute e di oggi si vedono tutte; delle future solo la prossima, e solo se quel pagamento non ha già una scadenza da saldare
+  const busy = new Set(all0.filter((u) => u.stato !== 'presto').map((u) => u.ricorrenza.id));
   const seen = new Set();
-  // fra le scadenze future si mostra solo la prossima di ogni pagamento (quelle già scadute si vedono tutte)
-  const up = upcoming(s, t, 60).filter((u) => {
+  const up = all0.filter((u) => {
     if (u.stato !== 'presto') return true;
-    if (seen.has(u.ricorrenza.id)) return false;
+    if (busy.has(u.ricorrenza.id) || seen.has(u.ricorrenza.id)) return false;
     seen.add(u.ricorrenza.id);
     return true;
   });
@@ -126,7 +128,7 @@ export function render() {
   }
   root.append(sectionTitle('Tutte'), card({ class: 'flush' }, h('div', { class: 'list' }, all.map((r) => {
     const k = byId(s.categorie, r.categoriaId);
-    const nxt = up.find((x) => x.ricorrenza.id === r.id);
+    const nxt = all0.find((x) => x.ricorrenza.id === r.id && x.stato === 'presto') ?? all0.find((x) => x.ricorrenza.id === r.id);
     return row({ icon: k?.emoji ?? '🔁', color: k?.colore, title: r.nome, subtitle: `${everyText(r)}${nxt ? ` · prossima ${formatDate(nxt.data, 'short', t)}` : ''}${r.attiva ? '' : ' · spenta'}`, right: fmt(r.tipo === 'entrata' ? r.importo : r.tipo === 'spesa' ? -r.importo : r.importo), tone: r.tipo === 'entrata' ? 'pos' : r.tipo === 'spesa' ? 'neg' : '', onClick: () => openRecurringForm(r.id) });
   }))));
   return root;

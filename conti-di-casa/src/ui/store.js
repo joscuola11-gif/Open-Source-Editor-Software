@@ -5,6 +5,7 @@ import { todayISO } from '../core/dates.js';
 import { periodOf, shiftPeriod } from '../core/periods.js';
 import { dueDates, generateDue } from '../core/recurring.js';
 import { dailyCopy, loadState, saveState } from '../storage.js';
+import { clone } from '../core/clone.js';
 
 let state = null;
 let storageOk = true;
@@ -82,7 +83,7 @@ export function setup({ famiglia, membro, valuta = 'EUR', conti = [] }) {
  * @returns {*} quello che restituisce fn
  */
 export function commit(fn, { undoable = true } = {}) {
-  const before = structuredClone(state);
+  const before = clone(state);
   let result;
   try {
     result = fn(state, Date.now());
@@ -125,7 +126,7 @@ export function replaceState(next, { keepSecurity = true } = {}) {
     const { pinHash, pinSalt, bloccoTelefono, bloccoAuto } = state.impostazioni;
     Object.assign(clean.impostazioni, { pinHash, pinSalt, bloccoTelefono, bloccoAuto });
   }
-  undoStack.push(structuredClone(state));
+  undoStack.push(clone(state));
   if (undoStack.length > MAX_UNDO) undoStack.shift();
   state = clean;
   scheduleSave();

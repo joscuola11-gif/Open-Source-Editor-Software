@@ -24,13 +24,13 @@ Tutto in italiano, tutto **senza internet**: i dati restano sul telefono. Softwa
 2. Aprilo dai file. Android chiede di consentire l'installazione «da questa fonte»: accetta.
 3. Se Play Protect avvisa che l'app non è nota: è normale, la firma è quella di prova (vedi sotto). Scegli «Installa comunque».
 
-Richiede Android 7.0 o più recente.
+Richiede Android 7.0 o più recente, con «Android System WebView» aggiornato (di solito si aggiorna da solo dal Play Store).
 
 ## Cosa NON fa (e cosa non è stato provato)
 
 Siamo onesti, così non ti fai male:
 
-- **Non è stata provata su un telefono vero.** Qui non c'è né un telefono né un emulatore. Provato: tutta la logica dei conti (34 prove, comprese 150 simulazioni a caso), l'interfaccia in un browser Chromium con schermo da telefono (27 prove) e il «ponte» con Android simulato (8 prove), la parte Java che non dipende da Android (39 prove), la struttura dell'APK (nessun permesso, firmato, allineato, contiene tutti i file). **Non provato**: l'apertura delle cartelle, lo sblocco con il blocco schermo e il selettore dei file *dentro Android*. Se qualcosa di questo non va, è lì che si guarda.
+- **Non è stata provata su un telefono vero.** Qui non c'è né un telefono né un emulatore. Provato: tutta la logica dei conti (34 prove, comprese 150 simulazioni a caso), l'interfaccia in un browser Chromium con schermo da telefono (36 prove), il «ponte» con Android simulato (9 prove), la parte Java che non dipende da Android (39 controlli), la struttura dell'APK (3 prove: nessun permesso, firmato, allineato, contiene tutti i file). **Non provato**: l'apertura delle cartelle, lo sblocco con il blocco schermo e il selettore dei file *dentro Android*. Se qualcosa di questo non va, è lì che si guarda.
 - **Nessun cloud, nessuna sincronizzazione automatica.** Per usarla in due telefoni: ognuno salva una copia, la manda all'altro, e la unisce (Altro → Dati e copie → Unisci). Si può ripetere quando si vuole.
 - **Nessun collegamento alla banca.** L'app non ha il permesso INTERNET. I movimenti si inseriscono a mano o si importano da un file CSV scaricato dalla banca.
 - **Nessuna notifica.** Le scadenze si vedono aprendo l'app (Home → «Da pagare»). Per le notifiche servirebbero permessi e un servizio in secondo piano.

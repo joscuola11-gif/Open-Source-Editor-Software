@@ -99,7 +99,7 @@ export function render() {
 
   // patrimonio
   const nw = netWorthSeries(s, p.to, ui.n, startDay(), (st, upTo) => netWorth(st, { upTo }));
-  if (nw.length > 1 && alive(s.movimenti).length) root.append(card(null, sectionTitle('Patrimonio nel tempo'), lineChart(nw.map((x) => x.valore), nw.map((x) => MONTHS_SHORT[parseISO(x.periodo.to).m - 1]), { label: `Patrimonio: da ${fmt(nw[0].valore, { force: true })} a ${fmt(nw.at(-1).valore, { force: true })}` }),
+  if (nw.length > 1 && alive(s.movimenti).length) root.append(card(null, sectionTitle('Patrimonio nel tempo'), lineChart(nw.map((x) => x.valore), nw.map((x) => MONTHS_SHORT[parseISO(x.periodo.to).m - 1]), { label: `Patrimonio: da ${fmt(nw[0].valore, { force: true })} a ${fmt(nw[nw.length - 1].valore, { force: true })}` }),
     h('p', { class: 'muted' }, `Oggi: ${fmt(netWorth(s))}`)));
   return root;
 }

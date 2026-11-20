@@ -150,3 +150,17 @@ test('senza ponte (browser) il blocco del telefono non compare', async () => {
     await app.context.close();
   }
 });
+
+test('Android avvisa la pagina quando la finestra si nasconde e torna (onStop/onStart): il blocco scatta anche così', async () => {
+  const seed = demoState();
+  seed.impostazioni.bloccoTelefono = true;
+  seed.impostazioni.bloccoAuto = 0;
+  await withNative(async ({ page }) => {
+    await page.waitForSelector('.tabbar'); // sblocco automatico all'avvio
+    await page.evaluate(() => { window.__appHidden(); window.__appShown(); }); // ritorno dalla schermata di sblocco: non blocca
+    await page.waitForTimeout(150);
+    assert.equal(await page.locator('.lock').count(), 0);
+    await page.evaluate(() => { window.__appHidden(); document.dispatchEvent(new Event('visibilitychange')); window.__appShown(); }); // due segnali per lo stesso fatto
+    await page.waitForSelector('.lock');
+  }, { seed });
+});

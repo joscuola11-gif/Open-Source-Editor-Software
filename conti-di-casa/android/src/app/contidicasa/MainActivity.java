@@ -282,6 +282,19 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStop() {
+        super.onStop();
+        // la pagina salva i dati e prende nota di quando si è usciti (serve al blocco automatico)
+        if (web != null) web.evaluateJavascript("window.__appHidden && window.__appHidden()", null);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (web != null) web.evaluateJavascript("window.__appShown && window.__appShown()", null);
+    }
+
+    @Override
     public void onBackPressed() {
         // il tasto «indietro» lo gestisce prima la pagina (chiude un foglio, torna alla pagina precedente);
         // se non c'è niente da chiudere, l'app va in secondo piano

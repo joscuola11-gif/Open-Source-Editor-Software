@@ -1,6 +1,7 @@
 // Il libro dei conti: saldi, movimenti, giroconti, rettifiche. Le funzioni che cambiano lo stato lo modificano sul posto e restituiscono l'elemento.
 
 import { TX_TYPES, alive, byId, newId, touch } from './model.js';
+import { clone } from './clone.js';
 import { isValidISO } from './dates.js';
 
 /** Cosa fa un movimento ai conti: [{contoId, delta}]. */
@@ -112,7 +113,7 @@ export function restoreTransaction(state, id, now = Date.now()) {
 export function duplicateTransaction(state, id, { data, now = Date.now() } = {}) {
   const t = state.movimenti.find((m) => m.id === id && !m.x);
   if (!t) throw new Error('Movimento non trovato.');
-  const copy = { ...structuredClone(t), id: newId('t') };
+  const copy = { ...clone(t), id: newId('t') };
   delete copy.ricorrenteId;
   delete copy.x;
   if (data) copy.data = data;

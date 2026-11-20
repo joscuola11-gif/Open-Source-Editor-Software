@@ -120,8 +120,16 @@ globalThis.__onBack = () => {
   return false;
 };
 
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+let away = false;
+function leave() {
+  if (away) return;
+  away = true;
+  hiddenAt = Date.now();
+  void store.flush();
+}
+function comeBack() {
+  if (!away) return;
+  away = false;
   if (mode !== 'app') return;
   if (consumeBusy()) return;
   const wait = store.settings().bloccoAuto * 1000;
@@ -132,7 +140,11 @@ document.addEventListener('visibilitychange', () => {
     store.runRecurring();
     renderMain();
   }
-});
+}
+// due fonti per lo stesso fatto: il browser (visibilitychange) e Android (onStop/onStart della finestra), senza doppioni
+document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? leave() : comeBack()));
+globalThis.__appHidden = leave;
+globalThis.__appShown = comeBack;
 
 export async function boot() {
   let has = false;
