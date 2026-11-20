@@ -120,3 +120,36 @@ test('programma impacchettato: il riconoscimento vocale parte dal pacchetto (onn
     if (copied) rmSync(bundled, { recursive: true, force: true });
   }
 });
+
+test('programma impacchettato: i file del ritaglio (MediaPipe) sono in resources/mediapipe e la persona si ritaglia davvero', { skip, timeout: 240000 }, async () => {
+  assert.ok(existsSync(path.join(path.dirname(EXE), 'resources', 'mediapipe', 'selfie_segmentation.tflite')), 'resources/mediapipe/selfie_segmentation.tflite');
+  const app = await electron.launch({
+    executablePath: EXE,
+    args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', `--user-data-dir=${tmp('ciak-pk-ud-')}`],
+    env: { ...process.env, NODE_OPTIONS: '' },
+  });
+  try {
+    const win = await app.firstWindow();
+    await win.waitForFunction(() => window.__ciak && document.querySelector('.timeline'), null, { timeout: 30000 });
+    assert.equal(await app.evaluate(({ app: a }) => a.isPackaged), true);
+    await win.evaluate(() => window.__ciak.commit('Sfondo verde', (d) => { d.settings.background = '#00ff00'; }));
+    await win.setInputFiles('#file-input', path.join(ROOT, 'tests', 'fixtures', 'astronaut.png'));
+    await win.waitForSelector('.media-card');
+    const card = win.locator('.media-card').first();
+    await card.hover();
+    await card.locator('.add').click();
+    await win.locator('.clip').first().click();
+    await win.locator('.insp-tabs .tab', { hasText: /^Immagine$/ }).click();
+    const sec = win.locator('details.section', { has: win.locator('summary', { hasText: 'Rimuovi sfondo' }) });
+    if (!(await sec.evaluate((e) => e.open))) await sec.locator('summary').click();
+    await sec.locator('label.toggle').click();
+    await win.waitForFunction(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).every((c) => !c.cutout.enabled || window.__ciak.cutouts.covers(c)), null, { timeout: 120000 });
+    await win.evaluate(() => window.__ciak.player.settle());
+    const px = (fx, fy) => win.evaluate(([x, y]) => { const c = window.__ciak.preview.canvas; const d = c.getContext('2d').getImageData(Math.floor(c.width * x), Math.floor(c.height * y), 1, 1).data; return [d[0], d[1], d[2]]; }, [fx, fy]);
+    const green = ([r, g, b]) => g > 200 && r < 60 && b < 60;
+    assert.equal(green(await px(0.25, 0.06)), true, 'sfondo tolto');
+    assert.equal(green(await px(0.5, 0.3)), false, 'la persona resta');
+  } finally {
+    await app.close();
+  }
+});

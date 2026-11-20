@@ -652,6 +652,42 @@ test('desktop: «Sottotitoli automatici» con Whisper vero nel processo principa
   }
 });
 
+test('desktop: «Rimuovi sfondo» usa i file di MediaPipe inclusi (protocollo interno) e ritaglia la persona di una foto vera', { skip, timeout: 240000 }, async () => {
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']);
+  try {
+    // il protocollo interno serve solo i file previsti, per nome
+    const probe = await win.evaluate(async () => {
+      const get = (u) => fetch(u).then((r) => r.status, () => 'errore');
+      return { ok: await get('ciak-asset://mediapipe/selfie_segmentation.binarypb'), nope: await get('ciak-asset://mediapipe/package.json'), up: await get('ciak-asset://mediapipe/..%2f..%2fpackage.json'), host: await get('ciak-asset://altro/selfie_segmentation.js'), web: await get('https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js').catch(() => 'errore') };
+    });
+    assert.equal(probe.ok, 200);
+    assert.notEqual(probe.nope, 200);
+    assert.notEqual(probe.up, 200);
+    assert.notEqual(probe.host, 200);
+    assert.equal(probe.web, 'errore', 'la rete resta bloccata');
+    await win.evaluate(() => window.__ciak.commit('Sfondo verde', (d) => { d.settings.background = '#00ff00'; }));
+    await win.setInputFiles('#file-input', path.join(ROOT, 'tests', 'fixtures', 'astronaut.png'));
+    await win.waitForSelector('.media-card');
+    const card = win.locator('.media-card').first();
+    await card.hover();
+    await card.locator('.add').click();
+    await win.locator('.clip').first().click();
+    await win.locator('.insp-tabs .tab', { hasText: /^Immagine$/ }).click();
+    const sec = win.locator('details.section', { has: win.locator('summary', { hasText: 'Rimuovi sfondo' }) });
+    if (!(await sec.evaluate((e) => e.open))) await sec.locator('summary').click();
+    await sec.locator('label.toggle').click();
+    await win.waitForFunction(() => window.__ciak.store.project.tracks.flatMap((t) => t.clips).every((c) => !c.cutout.enabled || window.__ciak.cutouts.covers(c)), null, { timeout: 120000 });
+    await win.evaluate(() => window.__ciak.player.settle());
+    const px = (fx, fy) => win.evaluate(([x, y]) => { const c = window.__ciak.preview.canvas; const d = c.getContext('2d').getImageData(Math.floor(c.width * x), Math.floor(c.height * y), 1, 1).data; return [d[0], d[1], d[2]]; }, [fx, fy]);
+    const green = ([r, g, b]) => g > 200 && r < 60 && b < 60;
+    assert.equal(green(await px(0.25, 0.06)), true, 'sfondo tolto');
+    assert.equal(green(await px(0.5, 0.3)), false, 'la persona resta');
+    assert.deepEqual(errors.filter((e) => !/GL Driver Message|GPU stall|Failed to load resource/.test(e)), [], 'solo gli errori delle richieste di prova (404 e rete bloccata)');
+  } finally {
+    await app.close();
+  }
+});
+
 test('desktop: «Registra schermo» elenca gli schermi veri, ne registra uno e mette la clip sulla timeline', { skip }, async () => {
   const { app, win, errors } = await launch(tmp('ciak-ud-'));
   try {
@@ -696,7 +732,7 @@ test('desktop: esporta in MP4 vero (H.264/AAC, frequenza costante, faststart) tr
   try {
     // il ponte espone solo ciò che serve e la pagina continua a non vedere Node
     const bridge = await win.evaluate(() => ({ keys: Object.keys(window.ciakDesktop).sort(), node: typeof require, proc: typeof process }));
-    assert.deepEqual(bridge.keys, ['asrAvailable', 'asrTranscribe', 'cancelConvert', 'chooseSource', 'convertAudio', 'convertToMp4', 'isDesktop', 'listSources', 'mp4Available', 'onAsrProgress', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
+    assert.deepEqual(bridge.keys, ['asrAvailable', 'asrTranscribe', 'cancelConvert', 'chooseSource', 'convertAudio', 'convertToMp4', 'isDesktop', 'listSources', 'mediapipeBase', 'mp4Available', 'onAsrProgress', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
     assert.equal(`${bridge.node}|${bridge.proc}`, 'undefined|undefined');
     // dati non validi e percorsi non autorizzati non fanno danni
     const bad = await win.evaluate(() => window.ciakDesktop.convertToMp4(new Uint8Array(10), {}));

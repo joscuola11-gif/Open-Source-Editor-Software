@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ciakDesktop', {
   isDesktop: true,
+  mediapipeBase: 'ciak-asset://mediapipe/',
   platform: process.platform,
   mp4Available: () => ipcRenderer.invoke('ciak:mp4-available'),
   convertToMp4: (bytes, options) => ipcRenderer.invoke('ciak:convert-mp4', bytes, options),

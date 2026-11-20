@@ -2,7 +2,7 @@
 // Guscio desktop di Ciak Studio: mostra l'editor (dist/ciak-studio.html) in una finestra nativa.
 // La pagina NON ha accesso a Node: contextIsolation e sandbox attivi, nessun preload.
 
-const { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, protocol, screen, session, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -15,6 +15,23 @@ const APP_URL = pathToFileURL(APP_FILE).href;
 const ICON = path.join(__dirname, 'build', 'icon.png');
 
 app.setAppUserModelId('app.ciakstudio.editor'); // raggruppa correttamente l'icona nella barra delle applicazioni
+
+// ---- file del motore di ritaglio (MediaPipe) -------------------------------------------------------------
+// La pagina non può leggere file locali con fetch: li serve un protocollo interno, solo da una cartella fissa e solo per nome di file.
+protocol.registerSchemesAsPrivileged([{ scheme: 'ciak-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
+const MIME = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.data': 'application/octet-stream', '.tflite': 'application/octet-stream', '.binarypb': 'application/octet-stream' };
+function mediapipeDir() {
+  if (app.isPackaged) return path.join(process.resourcesPath, 'mediapipe');
+  return path.join(__dirname, '..', 'node_modules', '@mediapipe', 'selfie_segmentation');
+}
+function serveAsset(request) {
+  const u = new URL(request.url);
+  const name = decodeURIComponent(u.pathname).replace(/^\/+/, '');
+  if (u.host !== 'mediapipe' || !/^[\w.-]+$/.test(name) || !MIME[path.extname(name)]) return new Response('Non trovato', { status: 404 });
+  const file = path.join(mediapipeDir(), name);
+  if (!fs.existsSync(file)) return new Response('Non trovato', { status: 404 });
+  return new Response(fs.readFileSync(file), { headers: { 'content-type': MIME[path.extname(name)], 'access-control-allow-origin': '*' } });
+}
 
 // ---- una sola istanza: un secondo avvio riporta in primo piano la finestra esistente ----------------
 if (!app.requestSingleInstanceLock()) {
@@ -58,7 +75,7 @@ const ours = (url) => typeof url === 'string' && url.startsWith('file://') && ur
 function hardenSession(ses) {
   // La pagina non deve poter raggiungere la rete: la versione per browser scarica il riconoscimento vocale da internet,
   // qui lo fa il processo principale (desktop/asr.cjs). Si blocca ogni richiesta che non sia un file locale.
-  ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !/^(file|blob|data|devtools|chrome-extension):/i.test(details.url) }));
+  ses.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !/^(file|blob|data|devtools|chrome-extension|ciak-asset):/i.test(details.url) }));
   const allowed = new Set(['media', 'display-capture', 'fullscreen']);
   ses.setPermissionRequestHandler((_wc, permission, callback, details) => callback(allowed.has(permission) && ours(details.requestingUrl)));
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => allowed.has(permission) && (ours(details?.requestingUrl) || requestingOrigin === 'file://'));
@@ -611,6 +628,7 @@ app.whenReady().then(() => {
     return;
   }
   Menu.setApplicationMenu(null); // nessuna barra dei menu: le scorciatoie le gestisce l'editor
+  protocol.handle('ciak-asset', serveAsset);
   hardenSession(session.defaultSession);
   installDisplayHandler(session.defaultSession);
   app.on('web-contents-created', (_e, contents) => lockNavigation(contents));

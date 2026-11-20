@@ -90,3 +90,18 @@ test('pacchetto: i file per piattaforma ripetono quelli comuni (altrimenti elect
     assert.equal(kept('dist/ciak-studio.html', files), true);
   }
 });
+
+test('pacchetto: i file di MediaPipe vanno in resources/mediapipe e il protocollo interno è dichiarato', () => {
+  for (const plat of ['win', 'linux', 'mac']) {
+    const r = pkg.build[plat].extraResources.find((x) => x.to === 'mediapipe');
+    assert.ok(r, `${plat}: extraResources mediapipe`);
+    assert.equal(r.from, 'node_modules/@mediapipe/selfie_segmentation');
+    for (const f of ['selfie_segmentation.js', 'selfie_segmentation.tflite', 'selfie_segmentation.binarypb']) assert.ok(r.filter.includes(f), `${plat}: ${f}`);
+    assert.ok(r.filter.some((x) => /simd_wasm_bin/.test(x)) && r.filter.some((x) => /^selfie_segmentation_solution_wasm_bin/.test(x)), 'wasm normale e SIMD');
+  }
+  assert.ok(existsSync(path.join(ROOT, 'node_modules/@mediapipe/selfie_segmentation/selfie_segmentation.tflite')));
+  const main = readFileSync(path.join(ROOT, 'desktop/main.cjs'), 'utf8');
+  assert.match(main, /registerSchemesAsPrivileged\(\[\{ scheme: 'ciak-asset'/);
+  assert.match(readFileSync(path.join(ROOT, 'desktop/preload.cjs'), 'utf8'), /mediapipeBase: 'ciak-asset:\/\/mediapipe\//);
+  assert.match(readFileSync(path.join(ROOT, 'index.html'), 'utf8'), /script-src[^;]*ciak-asset:/);
+});
