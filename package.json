@@ -1,6 +1,6 @@
 {
   "name": "ciak-studio",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "Ciak Studio — editor video non lineare open source che gira nel browser, senza installazione.",
   "type": "module",
   "private": true,
@@ -13,14 +13,15 @@
     "build": "node tools/build.js",
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/*.test.js\"",
-    "test:all": "npm test && npm run test:e2e",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e",
     "bench": "node tests/bench.js",
     "desktop": "npm run build && electron .",
     "dist:win": "node tools/fetch-ffmpeg.mjs win32 x64 && npm run build && electron-builder --win",
     "dist:linux": "node tools/fetch-ffmpeg.mjs linux x64 && npm run build && electron-builder --linux",
     "dist:mac": "node tools/fetch-ffmpeg.mjs darwin arm64 && node tools/fetch-ffmpeg.mjs darwin x64 && npm run build && electron-builder --mac",
     "test:desktop": "xvfb-run -a node --test --test-concurrency=1 \"tests/desktop/*.test.js\"",
-    "fetch:ffmpeg": "node tools/fetch-ffmpeg.mjs"
+    "fetch:ffmpeg": "node tools/fetch-ffmpeg.mjs",
+    "test:integration": "node --test \"tests/integration/*.test.js\""
   },
   "devDependencies": {
     "@breezystack/lamejs": "^1.2.7",

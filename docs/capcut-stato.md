@@ -60,6 +60,8 @@ Riferimento: `docs/capcut-catalogo-funzioni.txt` (numeri delle voci). Aggiornato
 | 250, 251 | «Momenti migliori»: i tratti più vivaci (movimento + volume), con marcatori o montaggio dei soli momenti scelti | `core/highlights.js`, `core/timeline.js` `keepOnly` |
 | 087, 088, 131, 189 | Inseguimento di un punto (motion tracking): un testo, adesivo o immagine segue un oggetto del video, in avanti e indietro dalla testina; correlazione normalizzata, precisione sotto il pixel, tratti persi segnalati | `core/tracker.js`, `core/trackmap.js` · prova su una ripresa con camera mossa e percorso noto |
 | 073, 255 | Inquadratura automatica (auto reframe): ingrandisce il video per riempire il formato (anche 16:9 → 9:16) e muove una camera virtuale che segue il soggetto in movimento (zona morta, velocità e accelerazione limitate) | `core/reframe.js` · prova con un quadrato in movimento |
+| 127-129, 267, 304-305, 415-416 | Rimuovi sfondo (persona) su video e foto con MediaPipe: bordi morbidi, stringi/allarga, sfondo sostituibile mettendo qualcosa sotto; maschere per fotogramma calcolate la prima volta e rifatte alla riapertura; nel programma per computer i file sono inclusi (protocollo interno) | `core/cutout.js`, `engine/cutout.js`, `engine/renderer.js` · prove su foto vera (astronauta NASA), video, Electron e pacchetto |
+| 212, 213, 260 | Traduzione dei sottotitoli in inglese (e bilingue) con la funzione «translate» di Whisper, per frase, con i tempi già trovati | `core/transcribe.js` `translateCues` · prova con il modello vero su voce italiana sintetica |
 
 ## Già presenti prima (verificate nel codice)
 Ribalta orizzontale e verticale (64-65), ritaglio con cursori (61), colore dello sfondo del canvas, estrai audio (218-219),
@@ -84,3 +86,7 @@ Vedi il README, sezione «Catalogo CapCut».
 - **Inseguimento**: segue l'aspetto di un punto (non ingrandimenti né rotazioni dell'oggetto); se l'oggetto esce dal quadro o viene coperto lo segna «perso» e l'elemento resta fermo finché non lo ritrova.
 - **Inquadratura automatica**: il soggetto è «ciò che si muove» (o, se tutto è fermo, ciò che spicca per colore); non riconosce volti o persone. Con più cose che si muovono segue la loro media.
 - **Scene**: tagli netti e dissolvenze lente; non vede i cambi di scena dentro un'unica ripresa con animazioni, né le dissolvenze più brevi di circa mezzo secondo (le tratta come tagli).
+- **Rimuovi sfondo**: riconosce persone (non oggetti o animali); su capelli sottili i bordi sono approssimati (regola «Bordi morbidi» e «Stringi/allarga»). Nel browser i file di MediaPipe
+  si scaricano da jsDelivr (da qui non raggiungibile: provato con gli stessi file in locale); nel programma per computer sono inclusi. Le maschere stanno in memoria: all'apertura di un progetto si rifanno.
+- **Traduzione**: solo verso l'inglese e con la qualità del modello scelto («Veloce» è approssimativo). Le altre lingue richiederebbero modelli di traduzione dedicati (non inclusi).
+- **Catalogo**: lo stato di ognuna delle 431 voci è nel README (tabella generata da `tools/catalog-status.mjs`).
