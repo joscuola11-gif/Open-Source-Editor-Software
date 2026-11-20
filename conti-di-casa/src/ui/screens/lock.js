@@ -35,7 +35,6 @@ export function renderLock({ onUnlock }) {
     pin = '';
     paint();
     if (fails >= 5) { lockedUntil = Date.now() + Math.min(300, 15 * 2 ** (fails - 5)) * 1000; msg.textContent = 'PIN sbagliato. Hai fatto troppi tentativi: aspetta un po’.'; } else msg.textContent = `PIN sbagliato (${fails}/5)`;
-    navigator.vibrate?.(60);
   }
   const press = (d) => { if (pin.length < 8) { pin += d; msg.textContent = ''; paint(); } };
   const key = (label, fn, aria) => h('button', { class: 'key', type: 'button', 'aria-label': aria ?? label, onClick: fn }, label);

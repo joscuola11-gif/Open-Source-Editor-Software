@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Conti di Casa</string>
+    <string name="unlock_title">Conti di Casa</string>
+    <string name="unlock_text">Sblocca per entrare</string>
+</resources>

@@ -12,9 +12,10 @@ export async function startServer() {
 }
 
 /** Apre un telefono virtuale (390×844) con la data fissata al 20 novembre 2026. `seed`: stato da mettere nel database prima di aprire l'app. */
-export async function openApp(browser, base, { seed = null, viewport = { width: 390, height: 844 }, colorScheme = 'light', now = NOW } = {}) {
+export async function openApp(browser, base, { seed = null, viewport = { width: 390, height: 844 }, colorScheme = 'light', now = NOW, init = null } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: 'it-IT', timezoneId: 'Europe/Rome', colorScheme, acceptDownloads: true, serviceWorkers: 'block' });
   await context.grantPermissions([]);
+  if (init) await context.addInitScript(init);
   const page = await context.newPage();
   await page.clock.setFixedTime(now);
   const problems = [];

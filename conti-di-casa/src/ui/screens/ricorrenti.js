@@ -93,7 +93,14 @@ function skip(recId, date) {
 export function render() {
   const s = getState();
   const t = today();
-  const up = upcoming(s, t, 60);
+  const seen = new Set();
+  // fra le scadenze future si mostra solo la prossima di ogni pagamento (quelle già scadute si vedono tutte)
+  const up = upcoming(s, t, 60).filter((u) => {
+    if (u.stato !== 'presto') return true;
+    if (seen.has(u.ricorrenza.id)) return false;
+    seen.add(u.ricorrenza.id);
+    return true;
+  });
   const all = alive(s.ricorrenze);
   const root = h('div', { class: 'screen' }, pageHeader({ title: 'Scadenze', actions: [h('button', { class: 'btn small primary', type: 'button', onClick: () => openRecurringForm() }, '＋ Nuova')] }));
   if (!all.length) {

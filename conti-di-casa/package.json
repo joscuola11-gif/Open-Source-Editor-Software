@@ -9,6 +9,7 @@
     "build": "node tools/build.js",
     "start": "node tools/serve.js",
     "test": "node --test \"tests/unit/*.test.js\"",
+    "test:java": "bash tools/test-java.sh",
     "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/*.test.js\"",
     "dist:apk": "npm run build && bash tools/build-apk.sh"
   },
