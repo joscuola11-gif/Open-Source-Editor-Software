@@ -1,0 +1,19 @@
+{
+  "name": "conti-di-casa",
+  "version": "1.0.0",
+  "description": "Conti di Casa — le spese e i conti di famiglia, per Android (e browser). Funziona senza internet: i dati restano sul telefono.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/build.js",
+    "start": "node tools/serve.js",
+    "test": "node --test \"tests/unit/*.test.js\"",
+    "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/*.test.js\"",
+    "dist:apk": "npm run build && bash tools/build-apk.sh"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "playwright": "1.63.0"
+  }
+}
