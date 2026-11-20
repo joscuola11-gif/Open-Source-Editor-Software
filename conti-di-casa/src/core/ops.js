@@ -1,14 +1,15 @@
 // Operazioni sugli elenchi (membri, conti, categorie, budget, ricorrenze, obiettivi, regolamenti, regole) con le regole che tengono i dati coerenti.
 
-import { alive, byId, newId, touch } from './model.js';
+import { ACCOUNT_TYPES, COLORS, alive, byId, newId, touch } from './model.js';
 import { addTransaction } from './ledger.js';
 
 const COLLECTIONS = ['membri', 'conti', 'categorie', 'budget', 'ricorrenze', 'obiettivi', 'regolamenti', 'regole'];
 const PREFIX = { membri: 'm', conti: 'c', categorie: 'k', budget: 'b', ricorrenze: 'r', obiettivi: 'o', regolamenti: 'g', regole: 'e' };
 
 /** Aggiunge (senza id) o aggiorna (con id) un elemento di un elenco. */
-export function upsert(state, key, rec, now = Date.now()) {
+export function upsert(state, key, input, now = Date.now()) {
   if (!COLLECTIONS.includes(key)) throw new Error(`Elenco sconosciuto: ${key}`);
+  const rec = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)); // niente campi «indefiniti»
   const list = state[key];
   const found = rec.id ? list.find((x) => x.id === rec.id) : null;
   if (found) {
@@ -32,7 +33,7 @@ const usedBy = (state, test) => state.movimenti.some((m) => !m.x && test(m));
 
 export function addMember(state, { nome, colore, emoji }, now) {
   if (!nome?.trim()) throw new Error('Scrivi il nome.');
-  return upsert(state, 'membri', { nome: nome.trim(), colore, emoji: emoji || '🙂', archiviato: false }, now);
+  return upsert(state, 'membri', { nome: nome.trim(), colore: colore ?? COLORS[state.membri.length % COLORS.length], emoji: emoji || '🙂', archiviato: false }, now);
 }
 
 /** Un membro già usato non si cancella (si perderebbero i conti fra i membri): si può nascondere. */
@@ -55,7 +56,7 @@ export function archiveMember(state, id, archived = true, now) {
 export function addAccount(state, { nome, tipo = 'altro', saldoIniziale = 0, emoji, colore, nelTotale = true, membroId = null }, now) {
   if (!nome?.trim()) throw new Error('Scrivi il nome del conto.');
   if (alive(state.conti).some((c) => c.nome.toLowerCase() === nome.trim().toLowerCase())) throw new Error('Esiste già un conto con questo nome.');
-  return upsert(state, 'conti', { nome: nome.trim(), tipo, saldoIniziale, emoji, colore, archiviato: false, nelTotale, membroId }, now);
+  return upsert(state, 'conti', { nome: nome.trim(), tipo, saldoIniziale, emoji: emoji || ACCOUNT_TYPES[tipo]?.emoji || '👛', colore: colore ?? COLORS[state.conti.length % COLORS.length], archiviato: false, nelTotale, membroId }, now);
 }
 
 export function removeAccount(state, id, now) {
@@ -75,7 +76,7 @@ export function archiveAccount(state, id, archived = true, now) {
 export function addCategory(state, { nome, tipo, emoji, colore }, now) {
   if (!nome?.trim()) throw new Error('Scrivi il nome della categoria.');
   if (alive(state.categorie).some((k) => k.tipo === tipo && k.nome.toLowerCase() === nome.trim().toLowerCase())) throw new Error('Esiste già una categoria con questo nome.');
-  return upsert(state, 'categorie', { nome: nome.trim(), tipo, emoji: emoji || '🧾', colore, archiviata: false }, now);
+  return upsert(state, 'categorie', { nome: nome.trim(), tipo, emoji: emoji || '🧾', colore: colore ?? COLORS[state.categorie.length % COLORS.length], archiviata: false }, now);
 }
 
 /** Cancella una categoria: i movimenti passano a `reassignTo` (o restano senza categoria), i suoi budget e le sue regole spariscono. */
