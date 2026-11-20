@@ -383,8 +383,18 @@ al fuzzer. Segnala bug riproducibili con il file `.ciak` del progetto, se possib
 
 Il codice di Ciak Studio è **MIT** — vedi [`LICENSE`](LICENSE).
 
-I pacchetti desktop includono software di terzi con le loro licenze:
-**Electron/Chromium** (MIT/BSD, `LICENSES.chromium.html`) e **ffmpeg** (GPLv3, in `resources/ffmpeg/LICENSE.txt`;
-build di [eugeneware/ffmpeg-static](https://github.com/eugeneware/ffmpeg-static), sorgenti su ffmpeg.org).
-ffmpeg è eseguito come programma separato, solo per la conversione in MP4. L'uso dei codec H.264/AAC può essere
-soggetto a licenze di brevetto in alcuni paesi per la distribuzione commerciale: per l'uso personale non cambia nulla.
+Ciak Studio usa solo software libero che permette l'uso anche commerciale, a condizione di conservare gli avvisi di licenza. L'elenco completo, con i testi,
+è in [`docs/LICENZE-TERZE.txt`](docs/LICENZE-TERZE.txt) (e viaggia nel pacchetto, accanto al programma). In breve:
+
+| Cosa | Licenza | A cosa serve |
+| --- | --- | --- |
+| Electron / Chromium | MIT / BSD | la finestra del programma |
+| ffmpeg (build di [eugeneware/ffmpeg-static](https://github.com/eugeneware/ffmpeg-static)) | GPLv3 | conversioni e MP4; è eseguito come programma separato, sorgenti su ffmpeg.org |
+| Whisper (OpenAI) e transformers.js, onnxruntime | MIT / Apache-2.0 | sottotitoli automatici (il modello si scarica la prima volta) |
+| MediaPipe (Google) | Apache-2.0 | rimuovi sfondo |
+| lamejs | LGPL-3.0 | codificatore MP3, incorporato nella pagina: si costruisce dai sorgenti con `npm run build` e si può sostituire |
+| gifenc | MIT | codificatore GIF |
+
+I suoni, la musica e i sottotitoli che crei con Ciak Studio sono tuoi. I **file che importi** (video, musica, foto) restano soggetti ai diritti di chi li ha creati: questo è il rischio vero
+nei video pubblicati, non il programma. L'uso dei codec H.264/AAC può essere soggetto a licenze di brevetto in alcuni paesi per la distribuzione commerciale: per l'uso personale non cambia nulla.
+Questo non è un parere legale.
