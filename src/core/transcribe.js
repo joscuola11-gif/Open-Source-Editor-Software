@@ -1,9 +1,10 @@
 // Sottotitoli automatici: dal suono ai sottotitoli. Mette insieme rilevamento del parlato, un riconoscitore (qualunque:
 // Whisper nel programma, un finto nelle prove), allineamento dei tempi e costruzione dei sottotitoli. Puro tranne
 // il riconoscitore, che si passa da fuori e deve avere la forma:
-//   engine.transcribe(Float32Array 16 kHz, {language, signal}) → Promise<{text: string, words?: [{text, start, end}]}>
+//   engine.transcribe(Float32Array 16 kHz, {language, signal, task}) → Promise<{text: string, words?: [{text, start, end}]}>
+// (`task` = 'transcribe' | 'translate': con «translate» il parlato si scrive in inglese)
 
-import { buildCues } from './captions.js';
+import { CAPTION_STYLES, breakLines, buildCues } from './captions.js';
 import { alignScript, tokenize } from './align.js';
 import { biquad, filter, resample } from './dsp.js';
 import { chunkSegments, detectSpeech } from './vad.js';
@@ -108,6 +109,41 @@ export function emptyCuesFromSpeech({ channels, sampleRate, minGap = 0.5 }) {
   const audio = toMono16k(channels, sampleRate);
   const vad = detectSpeech(audio, 16000, { minSilence: minGap });
   return { cues: vad.segments.map((s) => ({ start: s.start, end: s.end, text: '', lines: [''], words: [] })), duration: audio.length / 16000 };
+}
+
+/**
+ * Traduce in inglese (con la funzione «translate» di Whisper) il parlato di ogni sottotitolo, tenendo i tempi già trovati.
+ * Si traduce l'audio di ogni sottotitolo, non il testo: il riconoscitore ascolta e scrive direttamente in inglese.
+ * @param {{channels: Float32Array[], sampleRate: number, cues: object[], language: string, engine: object, style?: string, captionOptions?: object,
+ *          keepOriginal?: boolean, onProgress?: Function, signal?: {aborted: boolean}}} o
+ * @returns {Promise<object[]>} sottotitoli con `text`/`lines` tradotti (e l'originale sotto, se `keepOriginal`); `original` conserva il testo di partenza
+ */
+export async function translateCues({ channels, sampleRate, cues, language, engine, style = 'standard', captionOptions = {}, keepOriginal = false, onProgress = () => {}, signal }) {
+  const audio = toMono16k(channels, sampleRate);
+  const st = { ...CAPTION_STYLES[style], ...captionOptions };
+  const out = [];
+  for (let i = 0; i < cues.length; i++) {
+    if (signal?.aborted) throw new Error('Operazione annullata.');
+    const c = cues[i];
+    onProgress({ step: 'traduzione', done: i, total: cues.length });
+    const a = Math.max(0, Math.floor((c.start - 0.15) * 16000));
+    const b = Math.min(audio.length, Math.ceil((c.end + 0.15) * 16000));
+    let text = '';
+    if (c.end - c.start >= 0.3 && b - a > 1600) {
+      const r = await engine.transcribe(audio.slice(a, b), { language, task: 'translate', signal });
+      text = String(r?.text ?? '').trim();
+      if (isHallucination(text)) text = '';
+    }
+    // senza traduzione valida si tiene l'originale (meglio una riga nella lingua di partenza che un buco)
+    const translated = text || c.text;
+    const parts = translated.split(/\s+/).filter(Boolean);
+    const d = (c.end - c.start) / Math.max(1, parts.length);
+    const lines = breakLines(parts.map((w, k) => ({ text: w, start: c.start + k * d, end: c.start + (k + 1) * d })), st.maxChars, st.maxLines).map((l) => l.map((w) => w.text).join(' '));
+    const shown = keepOriginal && text ? [...lines, ...c.lines] : lines;
+    out.push({ ...c, original: c.text, text: shown.join('\n'), lines: shown, words: [], translated: Boolean(text) });
+  }
+  onProgress({ step: 'traduzione', done: cues.length, total: cues.length });
+  return out;
 }
 
 export { repairWordTimes };

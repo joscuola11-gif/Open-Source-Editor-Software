@@ -26,9 +26,9 @@ export function desktopEngine(bridge = globalThis.ciakDesktop, { model = 'tiny',
       const r = await bridge.asrAvailable();
       return { ok: Boolean(r?.ok), reason: r?.reason ?? '', models: r?.models ?? ASR_MODELS, languages: ASR_LANGUAGES };
     },
-    async transcribe(samples, { language = 'it', signal } = {}) {
+    async transcribe(samples, { language = 'it', signal, task = 'transcribe' } = {}) {
       if (signal?.aborted) throw new Error('Operazione annullata.');
-      const r = await bridge.asrTranscribe(samples, { language, model });
+      const r = await bridge.asrTranscribe(samples, { language, model, task });
       if (!r?.ok) throw new Error(r?.error || 'Riconoscimento non riuscito.');
       return { text: r.text, words: r.words };
     },
@@ -98,13 +98,13 @@ export function webEngine({ model = 'tiny', onModelProgress = () => {}, override
       if (typeof WebAssembly !== 'object') return { ok: false, reason: 'Questo browser non supporta WebAssembly.', models: ASR_MODELS, languages: ASR_LANGUAGES };
       return { ok: true, reason: '', models: ASR_MODELS, languages: ASR_LANGUAGES };
     },
-    async transcribe(samples, { language = 'it', signal } = {}) {
+    async transcribe(samples, { language = 'it', signal, task = 'transcribe' } = {}) {
       if (!ASR_LANGUAGES[language]) throw new Error(`Lingua non supportata: ${language}`);
       if (signal?.aborted) throw new Error('Operazione annullata.');
       const p = await pipe();
       // lascia respirare l'interfaccia prima di un calcolo lungo
       await new Promise((r) => setTimeout(r));
-      const out = await p(samples, { language, task: 'transcribe', return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5 });
+      const out = await p(samples, { language, task, return_timestamps: task === 'translate' ? false : 'word', chunk_length_s: 30, stride_length_s: 5 });
       const words = (out.chunks ?? []).filter((c) => c.text?.trim() && Array.isArray(c.timestamp) && Number.isFinite(c.timestamp[0])).map((c) => ({
         text: c.text.trim(),
         start: c.timestamp[0],

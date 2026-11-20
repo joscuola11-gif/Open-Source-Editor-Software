@@ -230,3 +230,46 @@ test('sottotitoli automatici: esporta SRT con i tempi della timeline', async () 
     assert.match(text, /Americans/);
   });
 });
+
+test('sottotitoli automatici: «traduci in inglese» (anche bilingue) mantiene i tempi e usa la funzione di traduzione del riconoscitore', async () => {
+  await withApp(async ({ page }) => {
+    await page.evaluate(() => {
+      window.__ciakAsr = {
+        calls: [],
+        engine: {
+          available: async () => ({ ok: true }),
+          transcribe: async (samples, o) => {
+            window.__ciakAsr.calls.push({ task: o.task ?? 'transcribe', language: o.language });
+            return o.task === 'translate' ? { text: 'English version of this sentence' } : { text: 'Questa è la frase originale in italiano, detta con calma e chiarezza.' };
+          },
+          dispose() {},
+        },
+      };
+    });
+    await setup(page);
+    await page.evaluate(() => window.__ciak.selection.clear());
+    await openCaptions(page);
+    assert.equal(await page.isVisible('#cap-translate'), true);
+    await page.selectOption('#cap-lang', 'en');
+    assert.equal(await page.isVisible('#cap-translate'), false, 'in inglese non c’è nulla da tradurre');
+    await page.selectOption('#cap-lang', 'it');
+    await page.selectOption('#cap-translate', 'en');
+    assert.equal(await page.isVisible('#cap-bilingual'), true);
+    await page.check('#cap-bilingual');
+    await page.click('#cap-run');
+    await page.waitForSelector('#cap-list .cap-text');
+    const texts = await rows(page);
+    assert.ok(texts.every((t) => /English version/.test(t)), texts.join(' | '));
+    const all = texts.join(' ').replace(/\s+/g, ' ');
+    assert.ok(/Questa è la frase/.test(all) && /originale in italiano/.test(all) && /detta con calma/.test(all), 'in bilingue sotto resta l’originale');
+    const calls = await page.evaluate(() => window.__ciakAsr.calls);
+    assert.equal(calls[0].task, 'transcribe');
+    assert.ok(calls.slice(1).every((c) => c.task === 'translate' && c.language === 'it'));
+    assert.equal(calls.length - 1, texts.length, 'una chiamata di traduzione per sottotitolo');
+    await page.click('#cap-add');
+    await page.waitForSelector('#captions-dialog', { state: 'detached' });
+    const s = await subs(page);
+    assert.equal(s.length, texts.length);
+    assert.ok(s[0].start > 0.15 && s[0].start < 0.5, 'i tempi sono quelli del parlato');
+  });
+});

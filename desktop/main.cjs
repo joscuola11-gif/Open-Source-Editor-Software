@@ -517,6 +517,7 @@ ipcMain.handle('ciak:asr-transcribe', async (event, samples, options = {}) => {
     const r = await asr().transcribe(input, {
       language: typeof options.language === 'string' ? options.language : 'it',
       model: typeof options.model === 'string' ? options.model : 'tiny',
+      task: options.task === 'translate' ? 'translate' : 'transcribe',
       onProgress: (p) => !sender.isDestroyed() && sender.send('ciak:asr-progress', p),
     });
     return { ok: true, text: r.text, words: r.words };

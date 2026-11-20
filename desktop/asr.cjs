@@ -104,10 +104,10 @@ function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = 
     },
     /**
      * @param {Float32Array} samples audio mono 16 kHz, al massimo 40 s
-     * @param {{language?: string, model?: keyof typeof MODELS, onProgress?: Function}} o
+     * @param {{language?: string, model?: keyof typeof MODELS, task?: 'transcribe'|'translate', onProgress?: Function}} o
      * @returns {Promise<{text: string, words: Array<{text: string, start: number, end: number}>}>}
      */
-    transcribe(samples, { language = 'it', model = 'tiny', onProgress } = {}) {
+    transcribe(samples, { language = 'it', model = 'tiny', task = 'transcribe', onProgress } = {}) {
       const run = async () => {
         if (!(samples instanceof Float32Array)) samples = new Float32Array(samples);
         if (!samples.length) return { text: '', words: [] };
@@ -115,7 +115,9 @@ function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = 
         if (!(language in LANGS)) throw new Error(`Lingua non supportata: ${language}`);
         const p = await pipe(model, onProgress);
         // la lingua va sempre indicata: senza, il modello parte dall'inglese (non sa riconoscerla da solo)
-        const opts = { task: 'transcribe', return_timestamps: 'word', chunk_length_s: 30, language: LANGS[language] };
+        if (task !== 'transcribe' && task !== 'translate') throw new Error(`Operazione sconosciuta: ${task}`);
+        // «translate» = il parlato nella lingua indicata si scrive in inglese; i tempi per parola servono solo a trascrivere
+        const opts = { task, return_timestamps: task === 'translate' ? false : 'word', chunk_length_s: 30, language: LANGS[language] };
         const out = await p(samples, opts);
         const words = (out.chunks ?? []).map((c) => ({ text: String(c.text).trim(), start: c.timestamp?.[0] ?? 0, end: c.timestamp?.[1] ?? c.timestamp?.[0] ?? 0 })).filter((w) => w.text);
         log(`riconosciuti ${words.length} parole`);

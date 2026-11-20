@@ -80,3 +80,22 @@ test('motore Whisper: non carica «sharp» (nel pacchetto per Windows non c’è
   assert.deepEqual(loaded, [], 'sharp non deve essere caricato');
   assert.deepEqual(await asr.available(), { ok: true });
 });
+
+test('motore Whisper: «translate» scrive in inglese il parlato italiano (voce sintetica) e un compito sconosciuto dà errore', { skip }, async () => {
+  const { spawnSync } = await import('node:child_process');
+  const wav = path.join(tmp ?? mkdtempSync(path.join(os.tmpdir(), 'ciak-asr-')), 'it.wav');
+  const r = spawnSync('espeak-ng', ['-v', 'it', '-s', '135', '-w', wav, 'Buongiorno a tutti, oggi parliamo del montaggio dei video e dei sottotitoli automatici.']);
+  if (r.status !== 0) return; // senza sintetizzatore vocale nell'ambiente non si può provare
+  const a = init();
+  const { decodeWav: dec } = await import('../../src/core/wav.js');
+  const { toMono16k } = await import('../../src/core/transcribe.js');
+  const w = dec(new Uint8Array(readFileSync(wav)));
+  const samples = toMono16k(w.channels, w.sampleRate);
+  const it = await a.transcribe(samples, { language: 'it', model: 'tiny', task: 'transcribe' });
+  const en = await a.transcribe(samples, { language: 'it', model: 'tiny', task: 'translate' });
+  assert.ok(it.text.length > 10, `trascrizione: «${it.text}»`);
+  assert.ok(en.text.length > 5, `traduzione: «${en.text}»`);
+  assert.notEqual(en.text.toLowerCase(), it.text.toLowerCase(), 'la traduzione non è la stessa frase');
+  assert.ok(/^[\x20-\x7e]+$/.test(en.text), `solo caratteri inglesi (senza accenti): «${en.text}»`);
+  await assert.rejects(a.transcribe(samples, { language: 'it', model: 'tiny', task: 'volo' }), /Operazione sconosciuta/);
+});

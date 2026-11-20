@@ -114,3 +114,49 @@ test('emptyCuesFromSpeech: una riga vuota per ogni frase parlata (pause lunghe s
   assert.ok(r.cues.every((c) => c.text === '' && c.end > c.start));
   assert.ok(r.cues[0].start > 0.3 && r.cues[0].end < 3.2 && r.cues[1].start > 4.2);
 });
+
+// ---- traduzione dei sottotitoli ------------------------------------------------------------------------------------
+import { translateCues } from '../../src/core/transcribe.js';
+
+test('traduzione: ogni sottotitolo si traduce ascoltando il suo tratto di audio, con gli stessi tempi', async () => {
+  const sr = 16000;
+  const ch = [new Float32Array(sr * 10).fill(0.1)];
+  const cues = [
+    { start: 0.5, end: 2.5, text: 'Ciao a tutti', lines: ['Ciao a tutti'], words: [{ text: 'Ciao', start: 0.5, end: 1 }] },
+    { start: 4, end: 7, text: 'Benvenuti nel canale', lines: ['Benvenuti nel canale'], words: [] },
+  ];
+  const calls = [];
+  const engine = { transcribe: async (s, o) => { calls.push({ n: s.length / sr, ...o }); return { text: calls.length === 1 ? 'Hello everyone' : 'Welcome to the channel' }; } };
+  const out = await translateCues({ channels: ch, sampleRate: sr, cues, language: 'it', engine });
+  assert.deepEqual(out.map((c) => c.text), ['Hello everyone', 'Welcome to the channel']);
+  assert.deepEqual(out.map((c) => [c.start, c.end]), [[0.5, 2.5], [4, 7]]);
+  assert.deepEqual(out.map((c) => c.original), ['Ciao a tutti', 'Benvenuti nel canale']);
+  assert.ok(out.every((c) => c.translated && c.words.length === 0));
+  assert.ok(calls.every((c) => c.task === 'translate' && c.language === 'it'));
+  assert.ok(Math.abs(calls[0].n - 2.3) < 0.01 && Math.abs(calls[1].n - 3.3) < 0.01, 'si ascolta il tratto del sottotitolo con un piccolo margine');
+});
+
+test('traduzione: bilingue, riga troppo lunga a capo, allucinazioni e silenzi tengono l’originale', async () => {
+  const sr = 16000;
+  const ch = [new Float32Array(sr * 6).fill(0.1)];
+  const cues = [
+    { start: 0, end: 4, text: 'Una frase abbastanza lunga da dover andare a capo', lines: ['Una frase abbastanza lunga', 'da dover andare a capo'], words: [] },
+    { start: 4.2, end: 5, text: 'Grazie', lines: ['Grazie'], words: [] },
+    { start: 5.2, end: 5.25, text: 'Eh', lines: ['Eh'], words: [] },
+  ];
+  const answers = ['This is a fairly long sentence that has to wrap onto a second line for sure', 'Thanks for watching!', 'x'];
+  let i = 0;
+  const engine = { transcribe: async () => ({ text: answers[i++] }) };
+  const bi = await translateCues({ channels: ch, sampleRate: sr, cues, language: 'it', engine, keepOriginal: true });
+  assert.ok(bi[0].lines.length >= 3, `traduzione su più righe + originale (${bi[0].lines.length})`);
+  assert.ok(bi[0].lines.slice(-2).join(' ') === 'Una frase abbastanza lunga da dover andare a capo');
+  assert.ok(bi[0].lines.slice(0, -2).every((l) => l.length <= 42));
+  // «Thanks for watching!» è una frase tipica inventata dal modello sul silenzio: si tiene l'originale
+  assert.equal(bi[1].text, 'Grazie');
+  assert.equal(bi[1].translated, false);
+  // tratto cortissimo: non si chiama il riconoscitore, resta l'originale
+  assert.equal(bi[2].text, 'Eh');
+  assert.equal(i, 2);
+  const abort = { aborted: true };
+  await assert.rejects(translateCues({ channels: ch, sampleRate: sr, cues, language: 'it', engine, signal: abort }), /annullata/);
+});

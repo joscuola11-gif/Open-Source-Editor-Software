@@ -4,7 +4,7 @@
 import { CAPTION_STYLES, cuesForTimeline } from '../core/captions.js';
 import { allClips, findClip } from '../core/project.js';
 import { formatSrt } from '../core/srt.js';
-import { captionsFromScript, emptyCuesFromSpeech, transcribe } from '../core/transcribe.js';
+import { captionsFromScript, emptyCuesFromSpeech, transcribe, translateCues } from '../core/transcribe.js';
 import { ASR_LANGUAGES, ASR_MODELS, createAsrEngine } from '../engine/asr-engines.js';
 import { renderProjectAudio } from '../engine/audio-export.js';
 import { downloadBlob } from '../engine/exporter.js';
@@ -34,6 +34,8 @@ export function openCaptionsDialog(app) {
     look: 'classic',
     karaoke: false,
     fillers: false,
+    translate: 'none',
+    bilingual: false,
     replace: allClips(app.store.project).some((c) => c.role === 'subtitle'),
     script: '',
     cues: [],
@@ -67,6 +69,7 @@ export function openCaptionsDialog(app) {
   });
   const langSel = select('cap-lang', Object.entries(ASR_LANGUAGES), state.language, (v) => {
     state.language = v;
+    syncVisibility();
   });
   const modelSel = select('cap-model', Object.entries(ASR_MODELS).map(([k, m]) => [k, m.label]), state.model, (v) => {
     state.model = v;
@@ -87,6 +90,14 @@ export function openCaptionsDialog(app) {
   const fillersBox = check('cap-fillers', 'Togli le esitazioni («ehm», «uhm»…)', state.fillers, (v) => {
     state.fillers = v;
   });
+  const translateSel = select('cap-translate', [['none', 'Nessuna (lingua originale)'], ['en', 'In inglese']], state.translate, (v) => {
+    state.translate = v;
+    syncVisibility();
+  });
+  const bilingualBox = check('cap-bilingual', 'Tieni anche il testo originale sotto (bilingue)', state.bilingual, (v) => {
+    state.bilingual = v;
+  });
+  const translateBox = h('div', { class: 'cap-translate-box' }, field('Traduzione', translateSel, 'La traduzione la fa Whisper ascoltando ogni frase: è buona con i modelli «Buona» e «Migliore», approssimativa con «Veloce».'), bilingualBox);
   const styleBox = h('div', { class: 'cap-row' }, field('Lunghezza dei sottotitoli', styleSel), field('Aspetto', lookSel));
 
   const progress = h('progress', { class: 'exp-progress', id: 'cap-progress', max: 1, value: 0, hidden: true });
@@ -101,6 +112,8 @@ export function openCaptionsDialog(app) {
     scriptBox.hidden = state.method !== 'script';
     fillersBox.hidden = state.method !== 'asr';
     styleBox.hidden = state.method === 'timing';
+    translateBox.hidden = state.method !== 'asr' || state.language === 'en';
+    bilingualBox.hidden = state.translate === 'none';
   }
 
   const modelProgress = (p) => {
@@ -116,7 +129,7 @@ export function openCaptionsDialog(app) {
     state.running = busy;
     runBtn.disabled = busy;
     stopBtn.hidden = !busy;
-    for (const el of [sourceSel, methodSel, langSel, modelSel, styleSel, lookSel, script]) el.disabled = busy;
+    for (const el of [sourceSel, methodSel, langSel, modelSel, styleSel, lookSel, script, translateSel]) el.disabled = busy;
     if (!sel) sourceSel.querySelector('option[value="clip"]').disabled = true;
   };
 
@@ -192,6 +205,22 @@ export function openCaptionsDialog(app) {
           });
           cues = r.cues;
           if (!cues.length) throw new Error('Non ho riconosciuto parole. Prova con un’altra lingua o un modello migliore.');
+          if (state.translate === 'en' && state.language !== 'en') {
+            cues = await translateCues({
+              channels,
+              sampleRate,
+              cues,
+              language: state.language,
+              engine,
+              style: state.style,
+              keepOriginal: state.bilingual,
+              signal: state.signal,
+              onProgress: ({ done, total }) => {
+                status.textContent = `Traduco in inglese… (${Math.min(done + 1, total)} di ${total})`;
+                progress.value = 0.95 + 0.05 * (done / Math.max(1, total));
+              },
+            });
+          }
         } finally {
           engine.dispose?.();
         }
@@ -263,6 +292,7 @@ export function openCaptionsDialog(app) {
     h('div', { class: 'cap-row' }, field('Lingua', langSel), modelBox),
     scriptBox,
     styleBox,
+    translateBox,
     fillersBox,
     h('div', { class: 'cap-run' }, runBtn, stopBtn),
     progress,
