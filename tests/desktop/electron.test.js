@@ -616,6 +616,90 @@ test('desktop: «Voce da testo» trasforma un testo in un clip audio con la voce
 const ASR_MODELS = process.env.CIAK_ASR_MODELS || path.join(ROOT, 'node_modules', 'sts-whisper-tiny', 'models');
 const haveAsr = existsSync(path.join(ASR_MODELS, 'Xenova', 'whisper-tiny', 'onnx', 'encoder_model_quantized.onnx')) ? false : 'modello non installato (npm i -D sts-whisper-tiny)';
 
+/** Un video con l'audio della voce vera (jfk.wav ripetuto): `seconds` lunghi, immagine piccolissima per restare leggero. */
+function speechVideo(dir, seconds) {
+  const out = path.join(dir, `parlato-${seconds}.webm`);
+  const loops = Math.ceil(seconds / 11);
+  const r = spawnSync('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', `color=c=0x303030:s=160x90:r=2:d=${seconds}`, '-stream_loop', String(loops), '-i', path.join(ROOT, 'tests', 'fixtures', 'jfk.wav'), '-t', String(seconds), '-c:v', 'libvpx', '-b:v', '30k', '-deadline', 'realtime', '-cpu-used', '8', '-c:a', 'libopus', '-b:a', '24k', out], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return out;
+}
+const breakBrowserDecoding = (win) => win.evaluate(() => {
+  // come per il video dell'utente (27 minuti, MP4 pesante da telefono): la decodifica del browser fallisce
+  OfflineAudioContext.prototype.decodeAudioData = () => Promise.reject(new DOMException('Unable to decode audio data', 'EncodingError'));
+});
+
+test('desktop: sottotitoli di un video LUNGO (22 minuti): ffmpeg legge l’audio dal file su disco anche se il browser non riesce', { skip, timeout: 300000 }, async () => {
+  const dir = tmp('ciak-long-');
+  const file = speechVideo(dir, 1320);
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg' });
+  try {
+    await breakBrowserDecoding(win);
+    await win.setInputFiles('#file-input', file);
+    await win.waitForSelector('.media-card', { timeout: 60000 });
+    const card = win.locator('.media-card').first();
+    await card.hover();
+    await card.locator('.add').click();
+    await win.locator('.clip').first().click();
+    await win.click('#tab-subtitles');
+    await win.click('#btn-auto-captions');
+    await win.waitForSelector('#captions-dialog');
+    assert.match(await win.inputValue('#cap-source'), /clip/);
+    await win.selectOption('#cap-method', 'timing');
+    const t0 = Date.now();
+    await win.click('#cap-run');
+    await win.waitForSelector('#cap-list .cap-text', { timeout: 200000 });
+    const secs = (Date.now() - t0) / 1000;
+    const times = await win.locator('#cap-list .sub-time').allTextContents();
+    assert.ok(times.length > 150, `una riga per ogni frase detta in 22 minuti: ${times.length}`);
+    const last = times.at(-1).split('→')[0].trim();
+    const [mm, ss] = last.split(':').map(Number);
+    assert.ok(mm * 60 + ss > 1250, `arriva in fondo al video: ultima frase a ${last}`);
+    assert.ok(secs < 120, `ci mette ${secs.toFixed(0)} s`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test('desktop: sottotitoli con Whisper vero da un video il cui audio il browser non sa leggere (ffmpeg lo estrae)', { skip: skip || haveAsr, timeout: 300000 }, async () => {
+  const dir = tmp('ciak-sp-');
+  const file = speechVideo(dir, 11);
+  const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_FFMPEG: 'ffmpeg', CIAK_ASR_MODELS: ASR_MODELS });
+  try {
+    await breakBrowserDecoding(win);
+    await win.setInputFiles('#file-input', file);
+    await win.waitForSelector('.media-card');
+    const card = win.locator('.media-card').first();
+    await card.hover();
+    await card.locator('.add').click();
+    await win.locator('.clip').first().click();
+    await win.click('#tab-subtitles');
+    await win.click('#btn-auto-captions');
+    await win.waitForSelector('#captions-dialog');
+    await win.selectOption('#cap-lang', 'en');
+    await win.click('#cap-run');
+    await win.waitForSelector('#cap-list .cap-text', { timeout: 200000 });
+    const all = (await win.locator('#cap-list .cap-text').evaluateAll((els) => els.map((e) => e.value))).join(' ').toLowerCase();
+    for (const w of ['fellow americans', 'your country']) assert.ok(all.includes(w), `manca «${w}» in «${all}»`);
+    // anche con tutto il progetto come sorgente (nessun clip selezionato)
+    await win.evaluate(() => window.__ciak.selection.clear());
+    await win.click('[data-act="cap-close"]');
+    await win.click('#btn-auto-captions');
+    await win.waitForSelector('#captions-dialog');
+    assert.equal(await win.inputValue('#cap-source'), 'project');
+    await win.selectOption('#cap-lang', 'en');
+    await win.click('#cap-run');
+    await win.waitForSelector('#cap-list .cap-text', { timeout: 200000 });
+    const all2 = (await win.locator('#cap-list .cap-text').evaluateAll((els) => els.map((e) => e.value))).join(' ').toLowerCase();
+    assert.ok(all2.includes('your country'), all2);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+
 test('desktop: «Sottotitoli automatici» con Whisper vero nel processo principale (voce umana vera)', { skip: skip || haveAsr, timeout: 240000 }, async () => {
   const { app, win, errors } = await launch(tmp('ciak-ud-'), [], { CIAK_ASR_MODELS: ASR_MODELS });
   try {
@@ -732,7 +816,7 @@ test('desktop: esporta in MP4 vero (H.264/AAC, frequenza costante, faststart) tr
   try {
     // il ponte espone solo ciò che serve e la pagina continua a non vedere Node
     const bridge = await win.evaluate(() => ({ keys: Object.keys(window.ciakDesktop).sort(), node: typeof require, proc: typeof process }));
-    assert.deepEqual(bridge.keys, ['asrAvailable', 'asrTranscribe', 'cancelConvert', 'chooseSource', 'convertAudio', 'convertToMp4', 'isDesktop', 'listSources', 'mediapipeBase', 'mp4Available', 'onAsrProgress', 'onConvertProgress', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
+    assert.deepEqual(bridge.keys, ['asrAvailable', 'asrTranscribe', 'cancelConvert', 'chooseSource', 'convertAudio', 'convertToMp4', 'extractAudio', 'isDesktop', 'listSources', 'mediapipeBase', 'mp4Available', 'onAsrProgress', 'onConvertProgress', 'pathForFile', 'platform', 'showInFolder', 'transcodeFile', 'tts', 'ttsVoices', 'videoTool']);
     assert.equal(`${bridge.node}|${bridge.proc}`, 'undefined|undefined');
     // dati non validi e percorsi non autorizzati non fanno danni
     const bad = await win.evaluate(() => window.ciakDesktop.convertToMp4(new Uint8Array(10), {}));

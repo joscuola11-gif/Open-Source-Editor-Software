@@ -90,3 +90,5 @@ Vedi il README, sezione «Catalogo CapCut».
   si scaricano da jsDelivr (da qui non raggiungibile: provato con gli stessi file in locale); nel programma per computer sono inclusi. Le maschere stanno in memoria: all'apertura di un progetto si rifanno.
 - **Traduzione**: solo verso l'inglese e con la qualità del modello scelto («Veloce» è approssimativo). Le altre lingue richiederebbero modelli di traduzione dedicati (non inclusi).
 - **Catalogo**: lo stato di ognuna delle 431 voci è nel README (tabella generata da `tools/catalog-status.mjs`).
+- **Video lunghi e pesanti** (1.1.1): nel programma per computer l'audio lo estrae ffmpeg direttamente dal file su disco, solo per la parte usata, a 16 kHz mono (provato con un video di 22 minuti
+  e con la decodifica del browser forzata a fallire). Nel browser resta la decodifica del browser, che carica tutto il file in memoria: con file di oltre 600 MB può non riuscire e il messaggio lo dice.

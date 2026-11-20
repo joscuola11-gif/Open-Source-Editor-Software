@@ -7,6 +7,7 @@ import { formatSrt } from '../core/srt.js';
 import { captionsFromScript, emptyCuesFromSpeech, transcribe, translateCues } from '../core/transcribe.js';
 import { ASR_LANGUAGES, ASR_MODELS, createAsrEngine } from '../engine/asr-engines.js';
 import { renderProjectAudio } from '../engine/audio-export.js';
+import { loadAudio } from '../engine/audio-source.js';
 import { downloadBlob } from '../engine/exporter.js';
 import { formatDuration } from '../core/util.js';
 import { h } from './dom.js';
@@ -144,7 +145,11 @@ export function openCaptionsDialog(app) {
   async function getAudio() {
     if (state.source === 'clip') {
       if (!sel) throw new Error('Seleziona un clip con audio.');
-      const r = await a.clipAudio(sel);
+      const blob = app.pool.blob(sel.mediaId);
+      if (!blob) throw new Error('File non disponibile.');
+      status.textContent = 'Leggo l’audio del clip…';
+      // 16 kHz mono basta per il parlato (e per un video di mezz'ora sono ~100 MB invece di ~650)
+      const r = await loadAudio(blob, { from: sel.in, to: sel.in + sel.duration * sel.speed, sampleRate: 16000, channels: 1 });
       state.offset = sel.start;
       state.speed = sel.speed || 1;
       return r;
@@ -153,7 +158,7 @@ export function openCaptionsDialog(app) {
       progress.hidden = false;
       progress.value = v * 0.3;
       status.textContent = 'Preparo l’audio del progetto…';
-    });
+    }, { sampleRate: 16000 });
     state.offset = 0;
     state.speed = 1;
     return r;

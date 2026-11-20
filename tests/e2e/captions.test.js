@@ -273,3 +273,83 @@ test('sottotitoli automatici: «traduci in inglese» (anche bilingue) mantiene i
     assert.ok(s[0].start > 0.15 && s[0].start < 0.5, 'i tempi sono quelli del parlato');
   });
 });
+
+// ---- audio di video lunghi o illeggibili dal browser -----------------------------------------------------------------
+import { readFileSync } from 'node:fs';
+import { decodeWav } from '../../src/core/wav.js';
+
+const JFK_SAMPLES = (() => {
+  const w = decodeWav(new Uint8Array(readFileSync(JFK)));
+  return { rate: w.sampleRate, data: Array.from(w.channels[0]) };
+})();
+
+/** Simula il caso dell'utente: il browser non riesce a decodificare l'audio del file (video pesante), ma il programma per computer sì (ffmpeg). */
+const desktopBridge = (mode) => ({ jfk, mode }) => {
+  window.__bridgeCalls = [];
+  const orig = OfflineAudioContext.prototype.decodeAudioData;
+  OfflineAudioContext.prototype.decodeAudioData = () => Promise.reject(new DOMException('Unable to decode audio data', 'EncodingError'));
+  window.__origDecode = orig;
+  window.ciakDesktop = {
+    pathForFile: () => 'C:\\Video\\VID_20261116_112119.mp4',
+    extractAudio: async (input, opts) => {
+      window.__bridgeCalls.push({ path: input.path ?? null, bytes: input.bytes ? input.bytes.length : 0, ...opts });
+      if (mode === 'noaudio') return { ok: false, noAudio: true, error: 'Questo file non ha una traccia audio.' };
+      if (mode === 'fail') return { ok: false, error: 'ffmpeg non è riuscito a leggere l’audio: file danneggiato' };
+      const s = Float32Array.from(jfk.data);
+      return { ok: true, sampleRate: jfk.rate, channels: 1, samples: s };
+    },
+  };
+};
+
+test('sottotitoli automatici: se il browser non legge l’audio (video lungo e pesante) lo estrae ffmpeg dal file su disco, solo la parte usata', async () => {
+  await withApp(async ({ page }) => {
+    await page.evaluate(fakeEngine, TEXT);
+    await setup(page);
+    await page.evaluate(desktopBridge('ok'), { jfk: JFK_SAMPLES, mode: 'ok' });
+    await selectClipByIndex(page, 0);
+    await openCaptions(page);
+    await page.selectOption('#cap-lang', 'en');
+    await page.click('#cap-run');
+    await page.waitForSelector('#cap-list .cap-text', { timeout: 30000 });
+    const calls = await page.evaluate(() => window.__bridgeCalls);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].path, 'C:\\Video\\VID_20261116_112119.mp4', 'ffmpeg legge dal percorso del file, non dalla memoria');
+    assert.equal(calls[0].bytes, 0);
+    assert.equal(calls[0].sampleRate, 16000);
+    assert.equal(calls[0].channels, 1);
+    assert.equal(calls[0].from, 0);
+    assert.ok(Math.abs(calls[0].to - 11) < 0.5, `solo la parte usata dal clip: fino a ${calls[0].to} s`);
+    assert.match((await rows(page)).join(' '), /fellow Americans/);
+  });
+});
+
+test('sottotitoli automatici: video senza traccia audio e ffmpeg che fallisce dicono la cosa giusta', async () => {
+  await withApp(async ({ page }) => {
+    await page.evaluate(fakeEngine, TEXT);
+    await setup(page);
+    await page.evaluate(desktopBridge('noaudio'), { jfk: JFK_SAMPLES, mode: 'noaudio' });
+    await selectClipByIndex(page, 0);
+    await openCaptions(page);
+    await page.click('#cap-run');
+    await page.waitForFunction(() => document.querySelector('#cap-status')?.dataset.state === 'error');
+    assert.match(await page.textContent('#cap-status'), /non ha una traccia audio/);
+    // ffmpeg non riesce e anche il browser no: il messaggio dice perché
+    await page.evaluate(desktopBridge('fail'), { jfk: JFK_SAMPLES, mode: 'fail' });
+    await page.click('#cap-run');
+    await page.waitForFunction(() => /file danneggiato/.test(document.querySelector('#cap-status')?.textContent ?? ''));
+    assert.match(await page.textContent('#cap-status'), /Non riesco a leggere l’audio di questo file/);
+  });
+});
+
+test('sottotitoli automatici: nel browser, se l’audio non si decodifica, il messaggio spiega cosa fare', async () => {
+  await withApp(async ({ page }) => {
+    await page.evaluate(fakeEngine, TEXT);
+    await setup(page);
+    await page.evaluate(() => { OfflineAudioContext.prototype.decodeAudioData = () => Promise.reject(new DOMException('x', 'EncodingError')); });
+    await selectClipByIndex(page, 0);
+    await openCaptions(page);
+    await page.click('#cap-run');
+    await page.waitForFunction(() => document.querySelector('#cap-status')?.dataset.state === 'error');
+    assert.match(await page.textContent('#cap-status'), /Non riesco a leggere l’audio di questo file.*formato dell’audio potrebbe non essere supportato/);
+  });
+});

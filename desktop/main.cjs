@@ -484,6 +484,76 @@ ipcMain.handle('ciak:tts', async (event, text, options = {}) => {
   }
 });
 
+// ---- estrazione dell'audio con ffmpeg ----------------------------------------------------------------------
+// Per sottotitoli, analisi e effetti: legge SOLO la parte che serve (da `from` a `to`) direttamente dal file su disco, a frequenza e canali
+// scelti, e restituisce i campioni. Regge video lunghissimi e qualsiasi codec (il browser integrato carica tutto in memoria e a volte fallisce).
+const MEDIA_EXT = new Set(['.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi', '.wmv', '.flv', '.3gp', '.mts', '.m2ts', '.ts', '.mpg', '.mpeg', '.ogv', '.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg', '.oga', '.opus', '.wma', '.aiff', '.aif']);
+const MAX_EXTRACT_BYTES = 1.2 * 1024 * 1024 * 1024;
+let extractProcs = new Set();
+
+ipcMain.handle('ciak:extract-audio', async (event, input, options = {}) => {
+  assertOurs(event);
+  const bin = ffmpegPath();
+  if (!bin) return { ok: false, error: 'ffmpeg non è disponibile in questa installazione.' };
+  const num = (v, d, lo, hi) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+  const rate = Math.round(num(options.sampleRate, 16000, 8000, 48000));
+  const channels = options.channels === 2 ? 2 : 1;
+  const from = num(options.from, 0, 0, 1e6);
+  const to = Number.isFinite(options.to) && options.to > from ? Math.min(options.to, 1e6) : null;
+  let src = null;
+  let tmp = null;
+  try {
+    if (typeof input?.path === 'string' && input.path) {
+      const p = path.resolve(input.path);
+      if (!MEDIA_EXT.has(path.extname(p).toLowerCase()) || !fs.existsSync(p) || !fs.statSync(p).isFile()) return { ok: false, error: 'File non trovato.' };
+      src = p;
+    } else {
+      const data = input?.bytes instanceof ArrayBuffer ? Buffer.from(input.bytes) : ArrayBuffer.isView(input?.bytes) ? Buffer.from(input.bytes.buffer, input.bytes.byteOffset, input.bytes.byteLength) : null;
+      if (!data || data.length < 100) return { ok: false, error: 'Dati audio non validi.' };
+      tmp = path.join(app.getPath('temp'), `ciak-ax-${process.pid}-${Date.now()}.bin`);
+      fs.writeFileSync(tmp, data);
+      src = tmp;
+    }
+    const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-protocol_whitelist', 'file,pipe', ...(from > 0 ? ['-ss', String(from)] : []), '-i', src, ...(to ? ['-t', String(to - from)] : []), '-vn', '-sn', '-dn', '-ac', String(channels), '-ar', String(rate), '-f', 'f32le', 'pipe:1'];
+    return await new Promise((resolve) => {
+      const proc = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      extractProcs.add(proc);
+      const chunks = [];
+      let bytes = 0;
+      let err = '';
+      let tooBig = false;
+      proc.stdout.on('data', (c) => {
+        bytes += c.length;
+        if (bytes > MAX_EXTRACT_BYTES) {
+          tooBig = true;
+          proc.kill();
+          return;
+        }
+        chunks.push(c);
+      });
+      proc.stderr.on('data', (c) => {
+        err = (err + c).slice(-1500);
+      });
+      proc.on('error', (e) => resolve({ ok: false, error: `Impossibile avviare ffmpeg: ${e.message}` }));
+      proc.on('close', (code) => {
+        extractProcs.delete(proc);
+        if (tooBig) return resolve({ ok: false, error: 'L’audio è troppo lungo per questa funzione (oltre circa 5 ore).' });
+        if (bytes < 4 * rate * 0.01) {
+          const noAudio = /does not contain any stream|Stream map|matches no streams|no audio/i.test(err) || code === 0;
+          return resolve({ ok: false, noAudio, error: noAudio ? 'Questo file non ha una traccia audio.' : `ffmpeg non è riuscito a leggere l’audio${err ? `: ${err.split('\n')[0]}` : '.'}` });
+        }
+        const buf = Buffer.concat(chunks, bytes - (bytes % 4));
+        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+        resolve({ ok: true, sampleRate: rate, channels, samples: new Float32Array(ab) });
+      });
+    });
+  } catch (e) {
+    return { ok: false, error: `Estrazione dell’audio non riuscita: ${e.message}` };
+  } finally {
+    if (tmp) fs.rmSync(tmp, { force: true });
+  }
+});
+
 // ---- riconoscimento vocale (sottotitoli automatici) ------------------------------------------------------------
 // Whisper locale (desktop/asr.cjs). I modelli si scaricano la prima volta (serve internet) e restano in %APPDATA%/…/modelli.
 // Per le prove: CIAK_ASR_MODELS = cartella con i modelli già pronti, e niente rete (ignorata nel programma impacchettato).
@@ -638,6 +708,8 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+app.on('before-quit', () => extractProcs.forEach((p) => p.kill()));
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

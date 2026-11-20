@@ -4,27 +4,45 @@ import { Mp3Encoder } from '@breezystack/lamejs';
 import { GIFEncoder, applyPalette, quantize } from 'gifenc';
 import { mixdown } from '../core/mixdown.js';
 import { allClips } from '../core/project.js';
-import { decodeAudio } from './media-import.js';
+import { loadAudio } from './audio-source.js';
 
-/** Mixa tutto l'audio del progetto (clip audio e video con suono). */
-export async function renderProjectAudio(project, pool, onProgress = () => {}) {
-  const ids = [...new Set(allClips(project).filter((c) => (c.kind === 'audio' || c.kind === 'video') && !c.muted).map((c) => c.mediaId))];
+/**
+ * Mixa tutto l'audio del progetto (clip audio e video con suono). `sampleRate` basso (16000) per il solo parlato.
+ * Ogni file si legge una volta sola, per la sola parte usata dai clip; un file senza audio si salta, uno illeggibile dà un errore che lo nomina.
+ */
+export async function renderProjectAudio(project, pool, onProgress = () => {}, { sampleRate = 44100 } = {}) {
+  const clips = allClips(project).filter((c) => (c.kind === 'audio' || c.kind === 'video') && !c.muted);
+  const ids = [...new Set(clips.map((c) => c.mediaId))];
   const sources = new Map();
+  const unreadable = [];
   let n = 0;
   for (const id of ids) {
     const blob = pool.blob(id);
     if (blob) {
+      const used = clips.filter((c) => c.mediaId === id);
+      const from = Math.min(...used.map((c) => c.in));
+      const to = Math.max(...used.map((c) => c.in + c.duration * c.speed));
       try {
-        sources.set(id, await decodeAudio(blob, { maxSeconds: 4 * 3600 }));
-      } catch {
-        /* un video senza audio: si salta */
+        const r = await loadAudio(blob, { from, to, sampleRate, channels: 2, maxSeconds: 4 * 3600 });
+        // le sorgenti partono da `from`: si riportano a «zero del file» con del silenzio davanti (mixdown legge dal tempo del file)
+        const lead = Math.round(from * r.sampleRate);
+        const ch = lead > 0 ? r.channels.map((c) => { const o = new Float32Array(lead + c.length); o.set(c, lead); return o; }) : r.channels;
+        sources.set(id, { channels: ch, sampleRate: r.sampleRate });
+      } catch (e) {
+        if (!/traccia audio/.test(e.message)) unreadable.push(`«${project.media[id]?.name ?? id}»: ${e.message}`);
       }
     }
     onProgress((0.5 * ++n) / ids.length);
     await new Promise((r) => setTimeout(r));
   }
-  if (!sources.size) throw new Error('Il progetto non contiene audio da esportare.');
-  return mixdown(project, sources, { sampleRate: 44100, onProgress: (v) => onProgress(0.5 + 0.4 * v) });
+  if (!sources.size) {
+    if (unreadable.length) throw new Error(unreadable[0]);
+    throw new Error('Nel progetto non c’è audio: i video non hanno una traccia audio o sono silenziati.');
+  }
+  const rates = new Set([...sources.values()].map((s) => s.sampleRate));
+  const rate = rates.size === 1 ? [...rates][0] : sampleRate;
+  if (rates.size > 1) throw new Error('I file hanno frequenze audio diverse: non riesco a mescolarli.');
+  return mixdown(project, sources, { sampleRate: rate, onProgress: (v) => onProgress(0.5 + 0.4 * v) });
 }
 
 export function encodeMp3(channels, sampleRate, kbps = 192) {

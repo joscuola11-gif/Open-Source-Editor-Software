@@ -28,6 +28,7 @@ import { Teleprompter } from './teleprompter.js';
 import { openProjectsDialog } from './projects-dialog.js';
 import { openHighlightsDialog } from './highlights-dialog.js';
 import { CutoutStore, computeMasks } from '../engine/cutout.js';
+import { loadAudio } from '../engine/audio-source.js';
 import { openCaptionsDialog } from './captions-dialog.js';
 import { saveCurrentAsTemplate } from './templates-panel.js';
 import { layoutClips } from '../core/layouts.js';
@@ -1555,11 +1556,9 @@ export class App {
       async clipAudio(clip) {
         const blob = app.pool.blob(clip.mediaId);
         if (!blob) throw new Error('File non disponibile.');
-        const { channels, sampleRate } = await decodeAudio(blob);
-        const a = Math.max(0, Math.floor(clip.in * sampleRate));
-        const b = Math.min(channels[0].length, Math.ceil((clip.in + clip.duration * clip.speed) * sampleRate));
-        if (b - a < sampleRate * 0.05) throw new Error('La parte di audio usata dal clip è troppo breve.');
-        return { channels: channels.map((c) => c.slice(a, b)), sampleRate };
+        const { channels, sampleRate } = await loadAudio(blob, { from: clip.in, to: clip.in + clip.duration * clip.speed, sampleRate: 44100, channels: 2 });
+        if (channels[0].length < sampleRate * 0.05) throw new Error('La parte di audio usata dal clip è troppo breve.');
+        return { channels, sampleRate };
       },
       /**
        * Effetti audio «offline»: riduzione del rumore, voci, altezza, togli/isola la voce. Il risultato è un nuovo file audio

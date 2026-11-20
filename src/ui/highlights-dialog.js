@@ -5,7 +5,7 @@ import { motionSeries } from '../core/scenes.js';
 import { clipEnd, keepOnly, addMarker } from '../core/timeline.js';
 import { findClip } from '../core/project.js';
 import { formatDuration } from '../core/util.js';
-import { decodeAudio } from '../engine/media-import.js';
+import { loadAudio } from '../engine/audio-source.js';
 import { sampleVideoFrames } from '../engine/video-analysis.js';
 import { h } from './dom.js';
 import { icon } from './icons.js';
@@ -67,10 +67,8 @@ export function openHighlightsDialog(app) {
       let loud = null;
       if (c.hasAudio !== false && !c.muted) {
         try {
-          const { channels, sampleRate } = await decodeAudio(blob, { maxSeconds: 4 * 3600 });
-          const a0 = Math.floor(from * sampleRate);
-          const b0 = Math.min(channels[0].length, Math.floor(to * sampleRate));
-          loud = loudnessSeries(channels.map((ch) => ch.subarray(a0, b0)), sampleRate, FPS, frames.length);
+          const { channels, sampleRate } = await loadAudio(blob, { from, to, sampleRate: 8000, channels: 1 });
+          loud = loudnessSeries(channels, sampleRate, FPS, frames.length);
         } catch {
           loud = null; // video senza audio: si usa solo il movimento
         }

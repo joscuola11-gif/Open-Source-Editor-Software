@@ -1,11 +1,20 @@
 'use strict';
 // Ponte minimo e controllato fra la pagina e il programma: conversioni con ffmpeg (MP4/MOV, FLAC/M4A).
 // La pagina NON riceve `require`, `process` né alcun accesso al disco.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('ciakDesktop', {
   isDesktop: true,
   mediapipeBase: 'ciak-asset://mediapipe/',
+  // percorso su disco di un file scelto dall'utente (serve a ffmpeg per leggere l'audio di video enormi senza caricarli in memoria)
+  pathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || '';
+    } catch {
+      return '';
+    }
+  },
+  extractAudio: (input, options) => ipcRenderer.invoke('ciak:extract-audio', input, options),
   platform: process.platform,
   mp4Available: () => ipcRenderer.invoke('ciak:mp4-available'),
   convertToMp4: (bytes, options) => ipcRenderer.invoke('ciak:convert-mp4', bytes, options),
