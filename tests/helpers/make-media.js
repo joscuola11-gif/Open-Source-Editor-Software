@@ -58,6 +58,10 @@ export function makeMedia() {
     run(['-f', 'lavfi', '-i', 'color=c=0x5a5a5a:s=640x360:r=30:d=6', '-f', 'lavfi', '-i', 'color=c=0xe02828:s=80x80:r=30:d=6',
       '-filter_complex', "[0:v][1:v]overlay=x='(W-w)*(0.12+0.76*(0.5-0.5*cos(t*0.9)))':y='(H-h)*(0.5+0.3*sin(t*1.1))'[v]", '-map', '[v]', ...vp8, '-an', f('mover.webm')]);
   }
+  // una persona vera (foto della NASA di pubblico dominio) che si ingrandisce piano per 2,4 s: serve alla rimozione dello sfondo
+  if (!existsSync(f('person.webm'))) {
+    run(['-loop', '1', '-framerate', '15', '-i', path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'astronaut.png'), '-t', '2.4', '-vf', "scale=512:512,zoompan=z='1+0.0008*on':d=1:s=512x512:fps=15", ...vp8, '-an', f('person.webm')]);
+  }
   // 30 s: fermo, movimento intenso fra 10 e 15 s, fermo; audio forte solo fra 20 e 25 s
   if (!existsSync(f('hl.webm'))) {
     run(['-f', 'lavfi', '-i', 'color=c=0x606060:s=320x180:r=30:d=10', '-f', 'lavfi', '-i', 'nullsrc=s=320x180:r=30:d=5,geq=random(1)*255:128:128', '-f', 'lavfi', '-i', 'color=c=0x606060:s=320x180:r=30:d=15',

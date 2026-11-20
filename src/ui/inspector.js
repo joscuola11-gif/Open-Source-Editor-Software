@@ -356,6 +356,15 @@ export class Inspector {
         h('p', { class: 'hint' }, 'Le analisi guardano fotogrammi piccoli del video: su un video lungo possono richiedere un po’. Le dissolvenze lente vengono trovate; le animazioni dentro un’unica ripresa non contano come cambio di scena.'),
       ], { open: false }));
     }
+    if (clip.kind === 'video' || clip.kind === 'image') {
+      const co = clip.cutout;
+      out.push(section('Rimuovi sfondo (persona)', [
+        this.#add(toggleControl(this.ctx, { label: 'Togli lo sfondo', get: (c) => c.cutout.enabled, set: (c, v) => { c.cutout.enabled = v; }, history: 'Rimuovi sfondo' })),
+        this.S({ label: 'Bordi morbidi', min: 0, max: 100, step: 1, unit: '%', get: (c) => c.cutout.softness, set: (c, v) => { c.cutout.softness = v; }, def: 25, history: 'Bordi del ritaglio' }),
+        this.S({ label: 'Stringi / allarga', min: -100, max: 100, step: 1, unit: '%', get: (c) => c.cutout.expand, set: (c, v) => { c.cutout.expand = v; }, def: 0, history: 'Contorno del ritaglio' }),
+        h('p', { class: 'hint', id: 'cutout-hint' }, 'Riconosce la persona in primo piano e rende trasparente il resto. Metti sotto un’immagine o un video (su una traccia più in basso) per cambiare lo sfondo. Alla prima volta serve un attimo per cercare la persona.'),
+      ], { open: co.enabled }));
+    }
     if (clip.kind === 'video' && globalThis.ciakDesktop?.videoTool) {
       const tools = [
         ['reverse', 'Al contrario', 'Riproduce la parte usata del video all’indietro (con l’audio).'],

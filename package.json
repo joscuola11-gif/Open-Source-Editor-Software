@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@breezystack/lamejs": "^1.2.7",
+    "@mediapipe/selfie_segmentation": "^0.1.1675465747",
     "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0",

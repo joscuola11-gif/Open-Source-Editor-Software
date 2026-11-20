@@ -27,6 +27,7 @@ import { renderProjectAudio, encodeMp3, encodeGif } from '../engine/audio-export
 import { Teleprompter } from './teleprompter.js';
 import { openProjectsDialog } from './projects-dialog.js';
 import { openHighlightsDialog } from './highlights-dialog.js';
+import { CutoutStore, computeMasks } from '../engine/cutout.js';
 import { openCaptionsDialog } from './captions-dialog.js';
 import { saveCurrentAsTemplate } from './templates-panel.js';
 import { layoutClips } from '../core/layouts.js';
@@ -110,6 +111,10 @@ export class App {
     this.audio = new AudioEngine();
     this.pool = new MediaPool(this.audio);
     this.renderer = new Renderer(this.pool);
+    this.cutouts = new CutoutStore();
+    this.renderer.cutoutFor = (clip, t) => this.cutouts.canvasFor(clip, t);
+    /** Calcolo delle maschere «rimuovi sfondo» in corso (una promessa alla volta). */
+    this.cutoutJob = null;
     this.player = new Player({ store: this.store, pool: this.pool, audio: this.audio, renderer: this.renderer });
     this.storage = new Storage();
     this.exporter = new Exporter({ store: this.store, player: this.player, audio: this.audio });
@@ -204,8 +209,11 @@ export class App {
 
   #wire() {
     const { store, selection, player } = this;
+    let cutTimer = null;
     store.on('change', ({ kind }) => {
       selection.sanitize(store.project);
+      // apertura di un progetto, annulla/ripeti, modelli: se un clip ha il ritaglio attivo senza maschere, si calcolano
+      if (kind !== 'gesture') { clearTimeout(cutTimer); cutTimer = setTimeout(() => this.actions.ensureCutouts?.(), 400); }
       this.nameBtn.textContent = store.project.name;
       document.title = `${store.project.name} — Ciak Studio`;
       if (kind !== 'gesture') this.#scheduleSave();
@@ -1493,6 +1501,52 @@ export class App {
         toast('Clicca nell’anteprima il punto da seguire (Esc per annullare).', { type: 'info', ms: 6000 });
         app.preview.pickPoint(({ px, py }) => A.trackObject({ overlayId, videoId, px, py }));
       },
+      /**
+       * «Rimuovi sfondo (persona)»: attiva o spegne il ritaglio sul clip e regola bordi e dimensione. Le maschere si calcolano la prima volta
+       * (con MediaPipe) e restano in memoria: riaprendo il progetto si ricalcolano da sole.
+       */
+      setCutout(clipId, patch, label = 'Rimuovi sfondo') {
+        const f = findClip(app.store.project, clipId);
+        if (!f || (f.clip.kind !== 'video' && f.clip.kind !== 'image')) return toast('Seleziona un video o una foto', { type: 'warn' });
+        const r = app.store.commit(label, (d) => {
+          const c = findClip(d, clipId).clip;
+          c.cutout = { ...c.cutout, ...patch };
+        }, { coalesce: `cutout:${clipId}` });
+        if (patch.enabled) A.ensureCutouts();
+        return r;
+      },
+      /** Calcola le maschere mancanti dei clip che hanno il ritaglio attivo (una alla volta). Si può attendere (anche prima di esportare). */
+      ensureCutouts() {
+        if (app.cutoutJob) return app.cutoutJob;
+        const todo = () => allClips(app.store.project).filter((c) => (c.kind === 'video' || c.kind === 'image') && c.cutout?.enabled && !app.cutouts.covers(c));
+        if (!todo().length) return Promise.resolve();
+        app.cutoutJob = (async () => {
+          let failed = false;
+          const working = toast('Cerco la persona nel video…', { ms: 600000 });
+          const label = working.querySelector('.toast-msg');
+          try {
+            for (let c = todo()[0]; c && !failed; c = todo().find((q) => !app.cutoutFailed?.has(q.mediaId))) {
+              const blob = app.pool.blob(c.mediaId);
+              if (!blob) { (app.cutoutFailed ??= new Set()).add(c.mediaId); continue; }
+              try {
+                const m = await computeMasks(blob, c, { fps: 10, onProgress: (v) => { label.textContent = `Cerco la persona nel video… ${Math.round(v * 100)}%`; } });
+                app.cutouts.set(c.mediaId, m);
+                app.cutoutFailed?.delete(c.mediaId);
+                app.player.invalidate();
+                if (m.people < 0.02) toast('Non vedo nessuna persona in primo piano: il ritaglio toglierebbe quasi tutto. Funziona meglio con una persona ben visibile.', { type: 'warn' });
+              } catch (e) {
+                (app.cutoutFailed ??= new Set()).add(c.mediaId);
+                failed = true;
+                toast(`Rimozione dello sfondo non riuscita: ${e.message}`, { type: 'error' });
+              }
+            }
+          } finally {
+            working.remove();
+            app.cutoutJob = null;
+          }
+        })();
+        return app.cutoutJob;
+      },
       /** Finestra «Momenti migliori»: trova i tratti più vivaci del clip video selezionato. */
       openHighlights() {
         openHighlightsDialog(app);
@@ -2228,6 +2282,7 @@ export class App {
       // se si converte, la registrazione intermedia usa una qualità più alta per non degradare due volte
       const interQuality = mp4 ? { low: 'medium', medium: 'high', high: 'ultra', ultra: 'ultra', custom: 'ultra' }[qSel.value] : qSel.value;
       try {
+        await this.actions.ensureCutouts();
         const res = await exporter.run({
           shortSide: +sizeSel.value, format: mp4 ? 'webm' : fmtSel.value, quality: interQuality === 'custom' ? 'ultra' : interQuality, bitrate: mp4 ? null : customBps(),
           onProgress: (v) => { progress.value = mp4 ? v * 0.7 : v; status.textContent = `${mp4 ? 'Fase 1/2 · registrazione' : 'Esportazione'}… ${Math.round(v * 100)}%`; },

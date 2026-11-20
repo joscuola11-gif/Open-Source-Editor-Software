@@ -7,6 +7,7 @@
 //  - Le coordinate x/y sono frazioni della larghezza/altezza del canvas (0 = centro).
 //    scale = 1 significa "contenuto adattato al canvas"; testo/forme/adesivi usano % dell'altezza.
 
+import { sanitizeCutout } from './cutout.js';
 import { clamp, isNum, mergeDeep, uid } from './util.js';
 import { MAX_SPEED, MIN_SPEED } from './presets.js';
 import { sanitizeEasing } from './keyframes.js';
@@ -95,6 +96,7 @@ export function createClip(kind, props = {}) {
     blend: 'normal',
     mask: { shape: 'none', size: 0.6, roundness: 0.25, invert: false, x: 0, y: 0, rotation: 0, feather: 0 },
     backdrop: { mode: 'none', amount: 60, color: '#000000' },
+    cutout: { enabled: false, softness: 25, expand: 0 },
     adjust: { brightness: 0, contrast: 0, saturation: 0, hue: 0, blur: 0, vignette: 0, temperature: 0, tint: 0, grain: 0 },
     filter: { id: 'none', intensity: 1 },
     grade: defaultGrade(),
@@ -222,6 +224,7 @@ export function sanitizeClip(raw, p) {
   }
   clip.grade = sanitizeGrade(raw.grade);
   clip.backdrop = sanitizeBackdrop(raw.backdrop);
+  clip.cutout = sanitizeCutout(raw.cutout);
   clip.mask = sanitizeMask(raw.mask);
   if (clip.kind === 'text') {
     clip.text.karaoke = sanitizeKaraoke(raw.text?.karaoke);

@@ -124,6 +124,8 @@ export function filterParamsFor(clip, H) {
 export class Renderer {
   #measure;
   #layer = null;
+  /** Provider delle maschere «rimuovi sfondo»: (clip, tempoNelFile) → canvas con la maschera nel canale alfa, o null. */
+  cutoutFor = null;
   #backdropCtx = null;
   #scratchA = null;
   #scratchB = null;
@@ -362,7 +364,9 @@ export class Renderer {
     const maskOn = clip.mask.shape !== 'none';
     const mask = maskOn ? { ...clip.mask, size: valueAt(clip, 'maskSize', local), x: valueAt(clip, 'maskX', local), y: valueAt(clip, 'maskY', local), feather: valueAt(clip, 'maskFeather', local) } : clip.mask;
     const feather = maskOn && mask.feather > 0.004 && this.supportsFilter;
-    const needLayer = overlays.length > 0 || (!!procedural && opacity < 0.999 && clip.kind !== 'sticker') || !!glow || feather;
+    // «rimuovi sfondo»: la maschera della persona (calcolata a parte) toglie il resto del contenuto
+    const cutMask = bitmap && clip.cutout?.enabled && this.cutoutFor ? this.cutoutFor(clip, clip.kind === 'image' ? 0 : clip.in + local * clip.speed) : null;
+    const needLayer = overlays.length > 0 || (!!procedural && opacity < 0.999 && clip.kind !== 'sticker') || !!glow || feather || !!cutMask;
 
     // --- contenuto pronto (eventuale fase pixel) ----------------------------------
     let drawImage = null; // (c, dx, dy, dw, dh) disegna il bitmap (già elaborato) nel riquadro
@@ -426,6 +430,16 @@ export class Renderer {
     if (needLayer) {
       if (glow && drawImage && this.supportsFilter) this.#paintGlow(target, glow, drawImage, box, scale, H, bx, by);
       this.#paintOverlays(target, overlays, box, bx, by);
+    }
+    if (cutMask) {
+      // la maschera copre tutto il fotogramma originale: del ritaglio si usa solo la parte mostrata
+      const cr = clip.crop;
+      target.save();
+      target.globalCompositeOperation = 'destination-in';
+      target.imageSmoothingEnabled = true;
+      target.imageSmoothingQuality = 'high';
+      target.drawImage(cutMask, cr.l * cutMask.width, cr.t * cutMask.height, (1 - cr.l - cr.r) * cutMask.width, (1 - cr.t - cr.b) * cutMask.height, bx, by, box.w, box.h);
+      target.restore();
     }
     if (feather) this.#featherMask(target, mask, box, scale);
     target.restore();
