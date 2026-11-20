@@ -6,6 +6,7 @@ const { app, BrowserWindow, Menu, desktopCapturer, dialog, ipcMain, protocol, sc
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const tts = require('./tts.cjs');
 const { createAsr } = require('./asr.cjs');
@@ -542,9 +543,17 @@ ipcMain.handle('ciak:extract-audio', async (event, input, options = {}) => {
           const noAudio = /does not contain any stream|Stream map|matches no streams|no audio/i.test(err) || code === 0;
           return resolve({ ok: false, noAudio, error: noAudio ? 'Questo file non ha una traccia audio.' : `ffmpeg non è riuscito a leggere l’audio${err ? `: ${err.split('\n')[0]}` : '.'}` });
         }
-        const buf = Buffer.concat(chunks, bytes - (bytes % 4));
-        const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
-        resolve({ ok: true, sampleRate: rate, channels, samples: new Float32Array(ab) });
+        // un solo blocco di memoria allineato (nessuna copia in più): i pezzi si liberano man mano
+        const len = bytes - (bytes % 4);
+        const buf = Buffer.allocUnsafeSlow(len);
+        let at = 0;
+        while (chunks.length && at < len) {
+          const c = chunks.shift();
+          const n = Math.min(c.length, len - at);
+          c.copy(buf, at, 0, n);
+          at += n;
+        }
+        resolve({ ok: true, sampleRate: rate, channels, samples: new Float32Array(buf.buffer, buf.byteOffset, len / 4) });
       });
     });
   } catch (e) {
@@ -584,17 +593,40 @@ ipcMain.handle('ciak:asr-transcribe', async (event, samples, options = {}) => {
     if (!(samples instanceof Float32Array) && !(samples instanceof ArrayBuffer)) throw new Error('Audio non valido.');
     const input = samples instanceof ArrayBuffer ? new Float32Array(samples) : samples;
     const sender = event.sender;
-    const r = await asr().transcribe(input, {
-      language: typeof options.language === 'string' ? options.language : 'it',
-      model: typeof options.model === 'string' ? options.model : 'tiny',
-      task: options.task === 'translate' ? 'translate' : 'transcribe',
-      onProgress: (p) => !sender.isDestroyed() && sender.send('ciak:asr-progress', p),
-    });
-    return { ok: true, text: r.text, words: r.words };
+    const mode = ['light', 'fast', 'save'].includes(options.performance) ? options.performance : 'light';
+    if (mode !== 'fast') yieldPriority(true);
+    try {
+      const r = await asr().transcribe(input, {
+        language: typeof options.language === 'string' ? options.language : 'it',
+        model: typeof options.model === 'string' ? options.model : 'tiny',
+        task: options.task === 'translate' ? 'translate' : 'transcribe',
+        performance: mode,
+        onProgress: (p) => !sender.isDestroyed() && sender.send('ciak:asr-progress', p),
+      });
+      return { ok: true, text: r.text, words: r.words };
+    } finally {
+      if (mode !== 'fast') yieldPriority(false);
+    }
   } catch (e) {
     return { ok: false, error: e.message };
   }
 });
+
+/** Mentre il riconoscimento lavora, il programma passa «dopo» gli altri (priorità sotto la norma): il computer resta usabile. */
+let priorityDepth = 0;
+let priorityBefore = null;
+function yieldPriority(on) {
+  try {
+    if (on) {
+      if (priorityDepth++ === 0) {
+        priorityBefore = os.getPriority();
+        os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL);
+      }
+    } else if (--priorityDepth === 0) os.setPriority(priorityBefore ?? os.constants.priority.PRIORITY_NORMAL);
+  } catch {
+    /* su alcuni sistemi non è permesso: pazienza, resta la priorità normale */
+  }
+}
 
 // ---- finestra ----------------------------------------------------------------------------------------------
 function createWindow() {

@@ -16,7 +16,7 @@ export const TRANSFORMERS_VERSION = '4.3.2';
 const DEFAULT_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_VERSION}/dist/transformers.min.js`;
 
 /** Motore del programma per computer (Whisper locale). `null` se il ponte non c'è. */
-export function desktopEngine(bridge = globalThis.ciakDesktop, { model = 'tiny', onModelProgress = () => {} } = {}) {
+export function desktopEngine(bridge = globalThis.ciakDesktop, { model = 'tiny', performance = 'light', onModelProgress = () => {} } = {}) {
   if (!bridge?.asrTranscribe) return null;
   const off = bridge.onAsrProgress?.((p) => onModelProgress(p));
   return {
@@ -28,7 +28,7 @@ export function desktopEngine(bridge = globalThis.ciakDesktop, { model = 'tiny',
     },
     async transcribe(samples, { language = 'it', signal, task = 'transcribe' } = {}) {
       if (signal?.aborted) throw new Error('Operazione annullata.');
-      const r = await bridge.asrTranscribe(samples, { language, model, task });
+      const r = await bridge.asrTranscribe(samples, { language, model, task, performance });
       if (!r?.ok) throw new Error(r?.error || 'Riconoscimento non riuscito.');
       return { text: r.text, words: r.words };
     },

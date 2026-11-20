@@ -60,6 +60,7 @@ test('sottotitoli automatici: riconoscimento → elenco da correggere → clip a
     await openCaptions(page);
     assert.equal(await page.inputValue('#cap-source'), 'clip', 'con un clip selezionato parte da quello');
     assert.equal(await page.inputValue('#cap-lang'), 'it');
+    assert.equal(await page.isVisible('#cap-performance'), false, 'nel browser non c’è la scelta dell’uso del computer (solo nel programma per computer)');
     await page.selectOption('#cap-lang', 'en');
     await page.click('#cap-run');
     await page.waitForSelector('#cap-list .cap-text');

@@ -9,7 +9,7 @@ Ispirato alla semplicità di CapCut, costruito su un nucleo di montaggio verific
 
 ## Installazione su Windows
 
-1. Scarica **`Ciak-Studio-1.1.1-Windows-x64.zip`**.
+1. Scarica **`Ciak-Studio-1.1.2-Windows-x64.zip`**.
 2. **Estrai tutto** in una cartella a tua scelta (non avviarlo dall'interno dello zip), ad esempio `C:\Programmi\Ciak Studio` o sul Desktop.
 3. Fai doppio clic su **`Ciak Studio.exe`**.
 

@@ -12,6 +12,8 @@ import { normalizeWords, repairWordTimes } from './wordtimes.js';
 
 /** Audio a più canali → mono a 16 kHz (ingresso del riconoscimento vocale). */
 export function toMono16k(channels, sr) {
+  // già mono a 16 kHz (come arriva dal programma per computer): nessuna copia, per un video di mezz'ora sono ~100 MB risparmiati
+  if (channels.length === 1 && sr === 16000) return channels[0];
   const n = channels[0].length;
   const mono = new Float32Array(n);
   for (const c of channels) for (let i = 0; i < n; i++) mono[i] += c[i] / channels.length;

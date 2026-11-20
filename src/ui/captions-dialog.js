@@ -31,6 +31,7 @@ export function openCaptionsDialog(app) {
     method: 'asr',
     language: remembered.language && ASR_LANGUAGES[remembered.language] ? remembered.language : 'it',
     model: remembered.model && ASR_MODELS[remembered.model] ? remembered.model : 'tiny',
+    performance: ['light', 'fast', 'save'].includes(remembered.performance) ? remembered.performance : 'light',
     style: 'standard',
     look: 'classic',
     karaoke: false,
@@ -86,7 +87,11 @@ export function openCaptionsDialog(app) {
     state.script = script.value;
   });
 
-  const modelBox = h('div', { class: 'cap-model-box' }, field('Modello', modelSel, 'La prima volta viene scaricato (serve internet); poi funziona anche senza.'));
+  const perfSel = select('cap-performance', [['light', 'Leggero (consigliato): usa metà del computer'], ['fast', 'Veloce: usa tutto il computer'], ['save', 'Poca memoria: più lento, occupa meno memoria']], state.performance, (v) => {
+    state.performance = v;
+  });
+  const modelBox = h('div', { class: 'cap-model-box' }, field('Modello', modelSel, 'La prima volta viene scaricato (serve internet); poi funziona anche senza. «Migliore» è il più preciso ma anche il più pesante: occupa molta memoria e tempo.'));
+  const perfBox = h('div', { class: 'cap-perf-box' }, field('Uso del computer', perfSel, 'Il riconoscimento lavora con la CPU: «Leggero» non è più lento ma lascia il computer libero per fare altro.'));
   const scriptBox = h('div', { class: 'cap-script-box' }, field('Testo', script));
   const fillersBox = check('cap-fillers', 'Togli le esitazioni («ehm», «uhm»…)', state.fillers, (v) => {
     state.fillers = v;
@@ -109,6 +114,7 @@ export function openCaptionsDialog(app) {
   function syncVisibility() {
     methodHint.textContent = METHODS.find((m) => m[0] === state.method)[2];
     modelBox.hidden = state.method !== 'asr';
+    perfBox.hidden = state.method !== 'asr' || !globalThis.ciakDesktop?.asrTranscribe;
     langSel.closest('.cap-field').hidden = state.method === 'timing';
     scriptBox.hidden = state.method !== 'script';
     fillersBox.hidden = state.method !== 'asr';
@@ -130,7 +136,7 @@ export function openCaptionsDialog(app) {
     state.running = busy;
     runBtn.disabled = busy;
     stopBtn.hidden = !busy;
-    for (const el of [sourceSel, methodSel, langSel, modelSel, styleSel, lookSel, script, translateSel]) el.disabled = busy;
+    for (const el of [sourceSel, methodSel, langSel, modelSel, styleSel, lookSel, script, translateSel, perfSel]) el.disabled = busy;
     if (!sel) sourceSel.querySelector('option[value="clip"]').disabled = true;
   };
 
@@ -187,7 +193,7 @@ export function openCaptionsDialog(app) {
         cues = captionsFromScript({ channels, sampleRate, script: state.script, style: state.style, captionOptions: {} }).cues;
         if (!cues.length) throw new Error('Non riesco a mettere a tempo il testo: controlla che nell’audio ci sia parlato.');
       } else {
-        const engine = createAsrEngine({ model: state.model, onModelProgress: modelProgress });
+        const engine = createAsrEngine({ model: state.model, performance: state.performance, onModelProgress: modelProgress });
         const av = await engine.available();
         if (!av.ok) throw new Error(av.reason || 'Il riconoscimento vocale non è disponibile su questo computer.');
         try {
@@ -229,7 +235,7 @@ export function openCaptionsDialog(app) {
         } finally {
           engine.dispose?.();
         }
-        prefs.set('captions', { language: state.language, model: state.model });
+        prefs.set('captions', { language: state.language, model: state.model, performance: state.performance });
       }
       state.cues = cues;
       progress.value = 1;
@@ -295,6 +301,7 @@ export function openCaptionsDialog(app) {
     h('div', { class: 'cap-row' }, field('Audio', sourceSel), field('Metodo', methodSel)),
     methodHint,
     h('div', { class: 'cap-row' }, field('Lingua', langSel), modelBox),
+    perfBox,
     scriptBox,
     styleBox,
     translateBox,

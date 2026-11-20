@@ -719,6 +719,9 @@ test('desktop: «Sottotitoli automatici» con Whisper vero nel processo principa
     await win.click('#tab-subtitles');
     await win.click('#btn-auto-captions');
     await win.waitForSelector('#captions-dialog');
+    assert.equal(await win.isVisible('#cap-performance'), true, 'nel programma per computer c’è la scelta dell’uso del computer');
+    assert.equal(await win.inputValue('#cap-performance'), 'light', 'di base «leggero»');
+    assert.deepEqual(await win.locator('#cap-performance option').evaluateAll((o) => o.map((x) => x.value)), ['light', 'fast', 'save']);
     await win.selectOption('#cap-lang', 'en');
     await win.click('#cap-run');
     await win.waitForSelector('#cap-list .cap-text', { timeout: 200000 });

@@ -160,3 +160,10 @@ test('traduzione: bilingue, riga troppo lunga a capo, allucinazioni e silenzi te
   const abort = { aborted: true };
   await assert.rejects(translateCues({ channels: ch, sampleRate: sr, cues, language: 'it', engine, signal: abort }), /annullata/);
 });
+
+test('audio già mono a 16 kHz: nessuna copia (risparmia memoria sui video lunghi)', () => {
+  const a = new Float32Array(1600);
+  assert.equal(toMono16k([a], 16000), a);
+  assert.notEqual(toMono16k([a, a], 16000), a);
+  assert.ok(Math.abs(toMono16k([new Float32Array(44100)], 44100).length - 16000) <= 2, 'da 44,1 kHz si ricampiona a 16 kHz');
+});

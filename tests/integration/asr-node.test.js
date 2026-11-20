@@ -99,3 +99,18 @@ test('motore Whisper: «translate» scrive in inglese il parlato italiano (voce 
   assert.ok(/^[\x20-\x7e]+$/.test(en.text), `solo caratteri inglesi (senza accenti): «${en.text}»`);
   await assert.rejects(a.transcribe(samples, { language: 'it', model: 'tiny', task: 'volo' }), /Operazione sconosciuta/);
 });
+
+test('motore Whisper: modi «leggero», «veloce» e «poca memoria» danno lo stesso testo e scelgono i fili giusti', { skip }, async () => {
+  const { modeOptions, MODES } = require('../../desktop/asr.cjs');
+  assert.deepEqual(MODES, ['light', 'fast', 'save']);
+  assert.deepEqual(modeOptions('light', 8), { threads: 4, arena: true });
+  assert.deepEqual(modeOptions('fast', 8), { threads: 8, arena: true });
+  assert.deepEqual(modeOptions('save', 8), { threads: 4, arena: false });
+  assert.deepEqual(modeOptions('light', 1), { threads: 1, arena: true });
+  assert.deepEqual(modeOptions('boh', 4), { threads: 2, arena: true }, 'un modo sconosciuto vale «leggero»');
+  const a = createAsr({ cacheDir: mkdtempSync(path.join(os.tmpdir(), 'ciak-asr-modes-')), localModelsDir: MODELS, allowRemote: false });
+  const texts = [];
+  for (const performance of MODES) texts.push((await a.transcribe(jfk.channels[0], { language: 'en', model: 'tiny', performance })).text.toLowerCase());
+  assert.equal(new Set(texts).size, 1, `stesso testo in ogni modo: ${texts.join(' | ')}`);
+  assert.ok(texts[0].includes('your country'));
+});

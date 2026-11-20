@@ -92,3 +92,6 @@ Vedi il README, sezione «Catalogo CapCut».
 - **Catalogo**: lo stato di ognuna delle 431 voci è nel README (tabella generata da `tools/catalog-status.mjs`).
 - **Video lunghi e pesanti** (1.1.1): nel programma per computer l'audio lo estrae ffmpeg direttamente dal file su disco, solo per la parte usata, a 16 kHz mono (provato con un video di 22 minuti
   e con la decodifica del browser forzata a fallire). Nel browser resta la decodifica del browser, che carica tutto il file in memoria: con file di oltre 600 MB può non riuscire e il messaggio lo dice.
+- **Peso sul computer** (1.1.2): il riconoscimento vocale usa la CPU. Misurato con il modello vero: con metà dei fili non è più lento ma occupa metà della CPU (1,9 core invece di 3,3, stesso tempo);
+  senza l'«arena» di memoria di onnxruntime si dimezza la memoria (580 MB invece di 1030 MB col modello più piccolo) ma si va 2× più piano. Nel programma per computer c'è la scelta
+  «Uso del computer»: Leggero (di base), Veloce, Poca memoria; in più, mentre lavora, il programma passa «dopo» gli altri (priorità sotto la norma). Il modello «Migliore» resta il più pesante.

@@ -13,6 +13,19 @@ const LANGS = { it: 'italian', en: 'english', es: 'spanish', fr: 'french', de: '
 const MAX_SECONDS = 40;
 
 /**
+ * Quanto del computer usare. Misurato con il modello vero: con metà dei fili il riconoscimento non è più lento (oltre 2 fili non si guadagna nulla)
+ * ma occupa metà della CPU e lascia il computer usabile.
+ *   light = metà dei fili (consigliato) · fast = tutti i fili · save = metà dei fili e meno memoria (circa 2× più lento)
+ */
+function modeOptions(mode, cores = require('node:os').cpus().length) {
+  const n = Math.max(1, cores);
+  const half = Math.max(1, Math.floor(n / 2));
+  if (mode === 'fast') return { threads: n, arena: true };
+  if (mode === 'save') return { threads: half, arena: false };
+  return { threads: half, arena: true };
+}
+
+/**
  * transformers.js carica «sharp» (elaborazione di immagini) appena si apre, ma per la voce non serve a nulla e nel pacchetto per Windows
  * non c'è: lo si sostituisce con un segnaposto che si lamenta solo se qualcuno prova a usarlo.
  */
@@ -69,24 +82,28 @@ function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = 
     }
   }
 
-  async function pipe(modelKey, onProgress) {
+  async function pipe(modelKey, onProgress, mode = 'light') {
     const m = MODELS[modelKey];
     if (!m) throw new Error(`Modello sconosciuto: ${modelKey}`);
-    if (pipes.has(modelKey)) return pipes.get(modelKey);
+    const { threads, arena } = modeOptions(mode);
+    const key = `${modelKey}|${threads}|${arena}`;
+    if (pipes.has(key)) return pipes.get(key);
     const { pipeline } = load();
     const p = pipeline('automatic-speech-recognition', m.id, {
       dtype: 'q8',
       device: 'cpu',
+      // fili limitati per non occupare tutto il computer; senza «arena» (che trattiene la memoria già usata) si occupa la metà della memoria ma si va più piano
+      session_options: { intraOpNumThreads: threads, interOpNumThreads: 1, enableCpuMemArena: arena },
       progress_callback: (e) => {
         if (!onProgress) return;
         if (e.status === 'progress' || e.status === 'download' || e.status === 'initiate' || e.status === 'done' || e.status === 'ready') onProgress({ status: e.status, file: e.file, progress: e.progress, loaded: e.loaded, total: e.total });
       },
     }).catch((e) => {
-      pipes.delete(modelKey);
+      pipes.delete(key);
       const net = /fetch|network|ENOTFOUND|ECONN|getaddrinfo|Could not locate|404|offline/i.test(String(e?.message));
       throw new Error(net ? 'Non riesco a scaricare il modello di riconoscimento vocale: serve internet la prima volta.' : `Errore del modello: ${String(e?.message).split('\n')[0]}`);
     });
-    pipes.set(modelKey, p);
+    pipes.set(key, p);
     return p;
   }
 
@@ -104,16 +121,16 @@ function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = 
     },
     /**
      * @param {Float32Array} samples audio mono 16 kHz, al massimo 40 s
-     * @param {{language?: string, model?: keyof typeof MODELS, task?: 'transcribe'|'translate', onProgress?: Function}} o
+     * @param {{language?: string, model?: keyof typeof MODELS, task?: 'transcribe'|'translate', performance?: 'light'|'fast'|'save', onProgress?: Function}} o
      * @returns {Promise<{text: string, words: Array<{text: string, start: number, end: number}>}>}
      */
-    transcribe(samples, { language = 'it', model = 'tiny', task = 'transcribe', onProgress } = {}) {
+    transcribe(samples, { language = 'it', model = 'tiny', task = 'transcribe', performance = 'light', onProgress } = {}) {
       const run = async () => {
         if (!(samples instanceof Float32Array)) samples = new Float32Array(samples);
         if (!samples.length) return { text: '', words: [] };
         if (samples.length > 16000 * MAX_SECONDS) throw new Error(`Audio troppo lungo per un solo blocco (massimo ${MAX_SECONDS} s).`);
         if (!(language in LANGS)) throw new Error(`Lingua non supportata: ${language}`);
-        const p = await pipe(model, onProgress);
+        const p = await pipe(model, onProgress, MODES.includes(performance) ? performance : 'light');
         // la lingua va sempre indicata: senza, il modello parte dall'inglese (non sa riconoscerla da solo)
         if (task !== 'transcribe' && task !== 'translate') throw new Error(`Operazione sconosciuta: ${task}`);
         // «translate» = il parlato nella lingua indicata si scrive in inglese; i tempi per parola servono solo a trascrivere
@@ -130,4 +147,6 @@ function createAsr({ cacheDir, localModelsDir = null, allowRemote = true, log = 
   };
 }
 
-module.exports = { createAsr, MODELS, LANGS, MAX_SECONDS };
+const MODES = ['light', 'fast', 'save'];
+
+module.exports = { createAsr, MODELS, LANGS, MAX_SECONDS, MODES, modeOptions };
